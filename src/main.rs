@@ -1,7 +1,11 @@
-use axum::{Router, http::StatusCode, http::header, routing::get};
+use axum::{Router, extract::State, http::StatusCode, http::header, routing::get};
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
-use std::collections::HashMap;
+use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
@@ -11,8 +15,13 @@ use serde::Deserialize;
 use svg::Document;
 use svg::node::element::{Rectangle, Title};
 
+use reqwest;
+use tokio;
+use tracing_subscriber;
+
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
+const CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
 
 const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
     (235, 237, 240), // level 0 (no activity)
@@ -29,19 +38,54 @@ const GITHUB_PALETTE_DARK: [(u8, u8, u8); 5] = [
     (112, 201, 133), // level 4 (most activity)
 ];
 
-#[derive(Debug, Deserialize)]
+const PALLETE_CATPUCCIN_FRAPPE: [(u8, u8, u8); 5] = [
+    (204, 208, 218), // level 0 (no activity)
+    (64, 160, 43),   // level 1
+    (223, 142, 29),  // level 2
+    (254, 100, 11),  // level 3
+    (210, 15, 57),   // level 4 (most activity)
+];
+
+const PALLETE_CATPUCCIN_MOCHA: [(u8, u8, u8); 5] = [
+    (49, 50, 68),    // level 0 (no activity)
+    (166, 227, 161), // level 1
+    (249, 226, 175), // level 2
+    (250, 179, 135), // level 3
+    (243, 139, 168), // level 4 (most activity)
+];
+
+#[derive(Clone)]
+struct AppState {
+    response_cache: Arc<Mutex<HashMap<SvgParams, (String, Instant)>>>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
 struct SvgParams {
-    id: String,
+    id: Option<String>,
     #[serde(default = "default_timezone")]
     timezone: String,
     #[serde(default = "default_cell_size")]
     cell_size: usize,
     #[serde(default = "default_padding")]
     padding: usize,
+    #[serde(default = "default_rounding")]
+    rounding: u8,
     #[serde(default = "default_theme")]
     theme: String,
 }
 
+fn default_timezone() -> String {
+    "Europe/London".to_string()
+}
+fn default_cell_size() -> usize {
+    15
+}
+fn default_padding() -> usize {
+    2
+}
+fn default_rounding() -> u8 {
+    50
+}
 fn default_theme() -> String {
     "dark".to_string()
 }
@@ -58,31 +102,61 @@ struct Span {
     duration: f64,
 }
 
-fn default_timezone() -> String {
-    "Europe/London".to_string()
-}
-fn default_cell_size() -> usize {
-    15
-}
-fn default_padding() -> usize {
-    2
-}
-
 fn human_time(seconds: u32) -> String {
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;
     if hours > 0 {
-        format!("{}h {}m", hours, minutes)
+        if minutes == 0 {
+            format!("{}h", hours)
+        } else {
+            format!("{}h {}m", hours, minutes)
+        }
     } else if minutes > 0 {
-        format!("{}m {}s", minutes, seconds)
+        if seconds == 0 {
+            format!("{}m", minutes)
+        } else {
+            format!("{}m {}s", minutes, seconds)
+        }
     } else {
         format!("{}s", seconds)
     }
 }
 
-async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
-    // Parse timezone string using chrono-tz
+async fn make_heatmap_svg(
+    State(state): State<AppState>,
+    Query(params): Query<SvgParams>,
+) -> Response {
+    let id = match &params.id {
+        Some(id) => id.clone(),
+        None => return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response(),
+    };
+
+    let now = Instant::now();
+    let cached_response = {
+        let cache = state.response_cache.lock().unwrap();
+        cache.get(&params).and_then(|(response, timestamp)| {
+            if now.duration_since(*timestamp) < Duration::from_secs(CACHE_DURATION_SECONDS) {
+                Some(response.clone())
+            } else {
+                None
+            }
+        })
+    };
+
+    if let Some(response) = cached_response {
+        return (
+            StatusCode::OK,
+            HeaderMap::from_iter([(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("image/svg+xml"),
+            )]),
+            response,
+        )
+            .into_response();
+    }
+
+    // Parse timezone string
     let tz: Tz = match params.timezone.parse() {
         Ok(tz) => tz,
         Err(_) => {
@@ -101,7 +175,7 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
         // Fetch data for the given id
         let resp = reqwest::get(&format!(
             "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
-            params.id
+            id
         ))
         .await;
         if let Err(err) = resp {
@@ -186,7 +260,7 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
         // Create SVG document
         let width = (DEFAULT_COLS * params.cell_size + params.padding * (DEFAULT_COLS + 1)) as u32;
         let height = (DEFAULT_ROWS * params.cell_size + params.padding * (DEFAULT_ROWS + 1)) as u32;
-        let radius = params.cell_size as f32 / 4.0;
+        let radius = (params.rounding.min(100) as f32 / 200.0) * params.cell_size as f32;
         let mut document = Document::new()
             .set("width", width)
             .set("height", height)
@@ -200,26 +274,35 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
             current += chrono::Duration::days(1);
         }
 
-        // Collect all values for quantile calculation
+        // Collect all values and make a color scale function
         let mut values: Vec<u32> = all_dates
             .iter()
             .map(|date| *day_buckets.get(date).unwrap_or(&0))
             .collect();
         values.sort_unstable();
-        let quantile = |v: u32| -> usize {
-            if v == 0 || values.is_empty() {
+        let max_duration = *values.last().unwrap_or(&0);
+        let get_color = |v: u32| -> usize {
+            if v < 60 {
                 0
             } else {
-                // 4 quantiles (5 levels)
-                let idx = values.binary_search(&v).unwrap_or_else(|x| x);
-                let q = (idx as f32 / values.len() as f32 * 4.0).floor() as usize + 1;
-                q.min(4)
+                let ratio = v as f32 / max_duration as f32;
+                if ratio >= 0.7 {
+                    4
+                } else if ratio >= 0.3 {
+                    3
+                } else if ratio >= 0.1 {
+                    2
+                } else {
+                    1
+                }
             }
         };
 
         // Select palette based on theme param (default: dark)
         let palette = match params.theme.as_str() {
             "light" => &PALETTE_GITHUB_LIGHT,
+            "catppuccin_light" => &PALLETE_CATPUCCIN_FRAPPE,
+            "catppuccin_dark" => &PALLETE_CATPUCCIN_MOCHA,
             _ => &GITHUB_PALETTE_DARK,
         };
 
@@ -231,7 +314,7 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
             let y = (row * params.cell_size + params.padding * (row + 1)) as i32;
             let w = params.cell_size as i32;
             let h = params.cell_size as i32;
-            let color = palette[quantile(seconds)];
+            let color = palette[get_color(seconds)];
             let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
 
             // Add tooltip
@@ -272,6 +355,12 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("image/svg+xml"),
     );
+
+    {
+        let mut cache = state.response_cache.lock().unwrap();
+        cache.insert(params, (svg_buf.clone(), now));
+    }
+
     (StatusCode::OK, headers, svg_buf).into_response()
 }
 
@@ -280,10 +369,15 @@ async fn main() {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
+    let state = AppState {
+        response_cache: Arc::new(Mutex::new(HashMap::new())),
+    };
+
     // Build application with a route
     let app = Router::new()
         // `GET /` goes to `make_heatmap_svg` with query params
-        .route("/", get(make_heatmap_svg));
+        .route("/", get(make_heatmap_svg))
+        .with_state(state);
 
     // Run app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
