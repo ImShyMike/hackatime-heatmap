@@ -13,7 +13,7 @@ Beautiful activity heatmap for your profile!
 
 ## Usage
 
-You eitehr use the color sheme aware version:
+You can either use the color scheme aware version:
 
 ```html
 <a href="https://heatmap.shymike.dev?id=YOUR_ID&standalone=true" title="Click to view detailed data for each day!">
