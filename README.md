@@ -2,12 +2,12 @@
 
 Beautiful activity heatmap for your profile!
 
-<picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://heatmap.shymike.dev?id=263&theme=dark">
-    <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=263&theme=light">
-</picture>
-
-<img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=263">
+<a href="https://heatmap.shymike.dev?id=263" title="Click to view detailed data for each day!">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://heatmap.shymike.dev?id=263&theme=dark">
+        <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=263&theme=light">
+    </picture>
+</a>
 
 ---
 
@@ -16,16 +16,18 @@ Beautiful activity heatmap for your profile!
 You eitehr use the color sheme aware version:
 
 ```html
-<picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://heatmap.shymike.dev?id=YOUR_ID&theme=dark">
-    <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=YOUR_ID&theme=light">
-</picture>
+<a href="https://heatmap.shymike.dev?id=YOUR_ID" title="Click to view detailed data for each day!">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://heatmap.shymike.dev?id=YOUR_ID&theme=dark">
+        <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=YOUR_ID&theme=light">
+    </picture>
+</a>
 ```
 
 Or the simple version:
 
 ```html
-<img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=YOUR_ID">
+<img alt="Hackatime activity heatmap." title="Click to view detailed data for each day!" src="https://heatmap.shymike.dev?id=YOUR_ID">
 ```
 
 ## Configuration
