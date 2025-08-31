@@ -441,7 +441,7 @@ async fn main() {
         .route("/", get(make_heatmap_svg))
         .with_state(state);
 
-    // Run app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    // Run app with hyper, listening globally on port 8282
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8282").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
