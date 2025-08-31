@@ -107,8 +107,8 @@ The rounding percentage of each cell. Defaults to `50` %.
 
 The size of each cell in pixels. Defaults to `15` px.
 
-- [https://heatmap.shymike.dev?id=1&cell_size=15](https://heatmap.shymike.dev?id=1&cell_size=15)
-    ![Hackatime heatmap with 5px cell size](https://heatmap.shymike.dev?id=1&cell_size=5)
+- [https://heatmap.shymike.dev?id=1&cell_size=10](https://heatmap.shymike.dev?id=1&cell_size=10)
+    ![Hackatime heatmap with 5px cell size](https://heatmap.shymike.dev?id=1&cell_size=10)
 - [https://heatmap.shymike.dev?id=1&cell_size=25](https://heatmap.shymike.dev?id=1&cell_size=25)
     ![Hackatime heatmap with 25px cell size](https://heatmap.shymike.dev?id=1&cell_size=25)
 
