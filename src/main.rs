@@ -15,13 +15,10 @@ use serde::Deserialize;
 use svg::Document;
 use svg::node::element::{Rectangle, Title};
 
-use reqwest;
-use tokio;
-use tracing_subscriber;
-
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
-const CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
+const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
+const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
 
 const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
     (235, 237, 240), // level 0 (no activity)
@@ -57,6 +54,7 @@ const PALLETE_CATPUCCIN_MOCHA: [(u8, u8, u8); 5] = [
 #[derive(Clone)]
 struct AppState {
     response_cache: Arc<Mutex<HashMap<SvgParams, (String, Instant)>>>,
+    request_cache: Arc<Mutex<HashMap<String, (RequestData, Instant)>>>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
@@ -90,12 +88,12 @@ fn default_theme() -> String {
     "dark".to_string()
 }
 
-#[derive(Debug, Deserialize)]
-struct ResponseData {
+#[derive(Debug, Deserialize, Clone)]
+struct RequestData {
     spans: Vec<Span>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Span {
     start_time: f64,
     end_time: f64,
@@ -136,7 +134,8 @@ async fn make_heatmap_svg(
     let cached_response = {
         let cache = state.response_cache.lock().unwrap();
         cache.get(&params).and_then(|(response, timestamp)| {
-            if now.duration_since(*timestamp) < Duration::from_secs(CACHE_DURATION_SECONDS) {
+            if now.duration_since(*timestamp) < Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS)
+            {
                 Some(response.clone())
             } else {
                 None
@@ -172,24 +171,57 @@ async fn make_heatmap_svg(
     let mut day_buckets: HashMap<chrono::NaiveDate, u32> = HashMap::new();
     let mut tooltips: Vec<String> = Vec::new();
     {
-        // Fetch data for the given id
-        let resp = reqwest::get(&format!(
-            "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
-            id
-        ))
-        .await;
-        if let Err(err) = resp {
-            eprintln!("Error fetching data: {:?}", err);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+        let cached_request = {
+            let cache = state.request_cache.lock().unwrap();
+            cache.get(&id).and_then(|(request, timestamp)| {
+                if now.duration_since(*timestamp)
+                    < Duration::from_secs(REQUEST_CACHE_DURATION_SECONDS)
+                {
+                    Some(request.clone())
+                } else {
+                    None
+                }
+            })
+        };
+
+        let spans: Vec<Span>;
+        if let Some(request) = cached_request {
+            spans = request.spans.clone();
+        } else {
+            // Fetch data for the given id
+            let resp = reqwest::get(&format!(
+                "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
+                id
+            ))
+            .await;
+            if let Err(err) = resp {
+                eprintln!("Error fetching data: {:?}", err);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+            }
+
+            // Parse JSON response
+            let json_resp = resp.unwrap().json::<RequestData>().await;
+            if let Err(err) = json_resp {
+                eprintln!("Error parsing JSON: {:?}", err);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+            }
+
+            spans = json_resp.unwrap().spans;
+
+            {
+                let mut request_cache = state.request_cache.lock().unwrap();
+                request_cache.insert(
+                    id,
+                    (
+                        RequestData {
+                            spans: spans.clone(),
+                        },
+                        now,
+                    ),
+                );
+            }
         }
 
-        // Parse JSON response
-        let json_resp = resp.unwrap().json::<ResponseData>().await;
-        if let Err(err) = json_resp {
-            eprintln!("Error parsing JSON: {:?}", err);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-        }
-        let spans = json_resp.unwrap().spans;
         // Calculate timestamps for one year ago and today in user's timezone
         let one_year_ago_ts = tz
             .with_ymd_and_hms(
@@ -357,8 +389,8 @@ async fn make_heatmap_svg(
     );
 
     {
-        let mut cache = state.response_cache.lock().unwrap();
-        cache.insert(params, (svg_buf.clone(), now));
+        let mut response_cache = state.response_cache.lock().unwrap();
+        response_cache.insert(params, (svg_buf.clone(), now));
     }
 
     (StatusCode::OK, headers, svg_buf).into_response()
@@ -371,6 +403,7 @@ async fn main() {
 
     let state = AppState {
         response_cache: Arc::new(Mutex::new(HashMap::new())),
+        request_cache: Arc::new(Mutex::new(HashMap::new())),
     };
 
     // Build application with a route
