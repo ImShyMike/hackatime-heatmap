@@ -45,8 +45,8 @@ All the parameters that can be adjusted are:
 
 Some example are:
 
-- [https://heatmap.shymike.dev?id=1&padding=4&theme=catppuccin_dark&timezone=EST&rounding=100](https://heatmap.shymike.dev?id=1&padding=4&theme=catppuccin_dark&timezone=EST&rounding=100)
-    ![Hackatime heatmap with Catppuccin dark theme, EST timezone, 100% rounding, and 4px padding](https://heatmap.shymike.dev?id=1&padding=0&theme=catppuccin_dark&timezone=EST&rounding=100)
+- [https://heatmap.shymike.dev?id=1&padding=2&theme=catppuccin_dark&timezone=EST&rounding=100](https://heatmap.shymike.dev?id=1&padding=2&theme=catppuccin_dark&timezone=EST&rounding=100)
+    ![Hackatime heatmap with Catppuccin dark theme, EST timezone, 100% rounding, and 2px padding](https://heatmap.shymike.dev?id=1&padding=2&theme=catppuccin_dark&timezone=EST&rounding=100)
 - [https://heatmap.shymike.dev?id=1&padding=0&theme=light&timezone=America/Los_Angeles&rounding=0](https://heatmap.shymike.dev?id=1&padding=0&theme=light&timezone=America/Los_Angeles&rounding=0)
     ![Hackatime heatmap with light theme, America/Los_Angeles timezone, 0% rounding, and 0px padding](https://heatmap.shymike.dev?id=1&padding=0&theme=light&timezone=America/Los_Angeles&rounding=0)
 
@@ -107,7 +107,7 @@ The rounding percentage of each cell. Defaults to `50` %.
 
 The size of each cell in pixels. Defaults to `15` px.
 
-- [https://heatmap.shymike.dev?id=1&cell_size=5](https://heatmap.shymike.dev?id=1&cell_size=5)
+- [https://heatmap.shymike.dev?id=1&cell_size=10](https://heatmap.shymike.dev?id=1&cell_size=10)
     ![Hackatime heatmap with 5px cell size](https://heatmap.shymike.dev?id=1&cell_size=5)
 - [https://heatmap.shymike.dev?id=1&cell_size=25](https://heatmap.shymike.dev?id=1&cell_size=25)
     ![Hackatime heatmap with 25px cell size](https://heatmap.shymike.dev?id=1&cell_size=25)
@@ -126,6 +126,4 @@ The percentage ranges for each color as a 3 item string list. Defaults to `70,30
 Whether or not to embed HTML into the request. Defaults to `false`
 
 - [https://heatmap.shymike.dev?id=1&standalone=true](https://heatmap.shymike.dev?id=1&standalone=true)
-    ![Hackatime heatmap with standalone=true](https://heatmap.shymike.dev?id=1&standalone=true)
 - [https://heatmap.shymike.dev?id=1&standalone=false](https://heatmap.shymike.dev?id=1&standalone=false)
-    ![Hackatime heatmap with standalone=false](https://heatmap.shymike.dev?id=1&standalone=false)
