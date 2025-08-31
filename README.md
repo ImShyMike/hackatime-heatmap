@@ -7,6 +7,8 @@ Beautiful activity heatmap for your profile!
     <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=263&theme=light">
 </picture>
 
+<img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=263">
+
 ---
 
 ## Usage
