@@ -9,6 +9,8 @@ Beautiful activity heatmap for your profile!
     </picture>
 </a>
 
+<sub>^^^ Those are my stats!</sub>
+
 ---
 
 ## Usage
