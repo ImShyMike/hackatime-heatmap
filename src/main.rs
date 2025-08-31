@@ -70,6 +70,8 @@ struct SvgParams {
     rounding: u8,
     #[serde(default = "default_theme")]
     theme: String,
+    #[serde(default = "default_ranges")]
+    ranges: String,
 }
 
 fn default_timezone() -> String {
@@ -86,6 +88,9 @@ fn default_rounding() -> u8 {
 }
 fn default_theme() -> String {
     "dark".to_string()
+}
+fn default_ranges() -> String {
+    "70,30,10".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -117,7 +122,7 @@ fn human_time(seconds: u32) -> String {
             format!("{}m {}s", minutes, seconds)
         }
     } else {
-        format!("{}s", seconds)
+        "<1m".to_string()
     }
 }
 
@@ -129,6 +134,30 @@ async fn make_heatmap_svg(
         Some(id) => id.clone(),
         None => return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response(),
     };
+
+    let ranges = params
+        .ranges
+        .split(',')
+        .filter_map(|s| s.trim().parse::<u32>().ok())
+        .collect::<Vec<u32>>();
+    if ranges.len() != 3 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Invalid ranges parameter, must be three comma-separated integers".to_string(),
+        ).into_response();
+    }
+    if !(ranges[0] > ranges[1] && ranges[1] > ranges[2] && ranges[2] > 0) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Invalid ranges parameter, must be three descending positive integers".to_string(),
+        ).into_response();
+    }
+    if ranges[0] > 100 || ranges[1] > 100 || ranges[2] > 100 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Invalid ranges parameter, values must be within 0 and 100".to_string(),
+        ).into_response();
+    }
 
     let now = Instant::now();
     let cached_response = {
@@ -318,11 +347,11 @@ async fn make_heatmap_svg(
                 0
             } else {
                 let ratio = v as f32 / max_duration as f32;
-                if ratio >= 0.7 {
+                if ratio >= ranges[0] as f32 / 100.0 {
                     4
-                } else if ratio >= 0.3 {
+                } else if ratio >= ranges[1] as f32 / 100.0 {
                     3
-                } else if ratio >= 0.1 {
+                } else if ratio >= ranges[2] as f32 / 100.0 {
                     2
                 } else {
                     1
