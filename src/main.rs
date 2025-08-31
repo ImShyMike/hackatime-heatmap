@@ -1,8 +1,6 @@
 use axum::{Router, http::StatusCode, http::header, routing::get};
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
-use plotters::prelude::*;
-use plotters::style::RGBColor;
 use std::collections::HashMap;
 
 use axum::http::{HeaderMap, HeaderValue};
@@ -10,23 +8,25 @@ use axum::response::{IntoResponse, Response};
 
 use axum::extract::Query;
 use serde::Deserialize;
+use svg::Document;
+use svg::node::element::{Rectangle, Title};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
 
-const PALETTE_GITHUB_LIGHT: [RGBColor; 5] = [
-    RGBColor(235, 237, 240), // level 0 (no activity)
-    RGBColor(155, 233, 168), // level 1
-    RGBColor(64, 196, 99),   // level 2
-    RGBColor(48, 161, 78),   // level 3
-    RGBColor(33, 110, 57),   // level 4 (most activity)
+const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
+    (235, 237, 240), // level 0 (no activity)
+    (155, 233, 168), // level 1
+    (64, 196, 99),   // level 2
+    (48, 161, 78),   // level 3
+    (33, 110, 57),   // level 4 (most activity)
 ];
-const GITHUB_PALETTE_DARK: [RGBColor; 5] = [
-    RGBColor(22, 27, 34),    // level 0 (no activity)
-    RGBColor(0, 92, 46),     // level 1
-    RGBColor(0, 130, 60),    // level 2
-    RGBColor(57, 166, 84),   // level 3
-    RGBColor(112, 201, 133), // level 4 (most activity)
+const GITHUB_PALETTE_DARK: [(u8, u8, u8); 5] = [
+    (22, 27, 34),    // level 0 (no activity)
+    (0, 92, 46),     // level 1
+    (0, 130, 60),    // level 2
+    (57, 166, 84),   // level 3
+    (112, 201, 133), // level 4 (most activity)
 ];
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +36,8 @@ struct SvgParams {
     timezone: String,
     #[serde(default = "default_cell_size")]
     cell_size: usize,
+    #[serde(default = "default_padding")]
+    padding: usize,
     #[serde(default = "default_theme")]
     theme: String,
 }
@@ -53,7 +55,6 @@ struct ResponseData {
 struct Span {
     start_time: f64,
     end_time: f64,
-    #[allow(dead_code)]
     duration: f64,
 }
 
@@ -61,7 +62,10 @@ fn default_timezone() -> String {
     "Europe/London".to_string()
 }
 fn default_cell_size() -> usize {
-    50
+    15
+}
+fn default_padding() -> usize {
+    2
 }
 
 fn human_time(seconds: u32) -> String {
@@ -177,26 +181,23 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
         }
     }
 
-    println!("Day buckets: {:?}", day_buckets);
-
-    let mut svg_buf = String::new();
+    let svg_buf: String;
     {
-        // Create in-memory SVG backend
-        let width = (DEFAULT_COLS * params.cell_size) as u32;
-        let height = (DEFAULT_ROWS * params.cell_size) as u32;
-        let backend = SVGBackend::with_string(&mut svg_buf, (width, height));
-        let root = backend.into_drawing_area();
-        if let Err(err) = root.fill(&WHITE) {
-            eprintln!("Error filling drawing area: {:?}", err);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-        }
+        // Create SVG document
+        let width = (DEFAULT_COLS * params.cell_size + params.padding * (DEFAULT_COLS + 1)) as u32;
+        let height = (DEFAULT_ROWS * params.cell_size + params.padding * (DEFAULT_ROWS + 1)) as u32;
+        let radius = params.cell_size as f32 / 4.0;
+        let mut document = Document::new()
+            .set("width", width)
+            .set("height", height)
+            .set("viewBox", format!("0 0 {} {}", width, height));
 
         // Generate all dates from one_year_ago to today
         let mut all_dates = Vec::new();
         let mut current = one_year_ago;
         while current <= today {
             all_dates.push(current);
-            current = current + chrono::Duration::days(1);
+            current += chrono::Duration::days(1);
         }
 
         // Collect all values for quantile calculation
@@ -226,38 +227,45 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
             let seconds = *day_buckets.get(date).unwrap_or(&0);
             let col = i / DEFAULT_ROWS;
             let row = i % DEFAULT_ROWS;
-
-            let x0 = (col * params.cell_size) as i32;
-            let y0 = (row * params.cell_size) as i32;
-            let x1 = ((col + 1) * params.cell_size) as i32;
-            let y1 = ((row + 1) * params.cell_size) as i32;
-
+            let x = (col * params.cell_size + params.padding * (col + 1)) as i32;
+            let y = (row * params.cell_size + params.padding * (row + 1)) as i32;
+            let w = params.cell_size as i32;
+            let h = params.cell_size as i32;
             let color = palette[quantile(seconds)];
-            let color = color.to_rgba();
-
-            // Draw rectangle
-            if let Err(err) = root.draw(&Rectangle::new([(x0, y0), (x1, y1)], color.filled())) {
-                eprintln!("Error drawing rectangle: {:?}", err);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-            }
+            let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
 
             // Add tooltip
-            let label = human_time(seconds).to_string();
-            tooltips.push(label);
+            let date_str = date.format("%B %-d").to_string();
+            let day = date.day();
+            let suffix = match day % 10 {
+                1 if day != 11 => "st",
+                2 if day != 12 => "nd",
+                3 if day != 13 => "rd",
+                _ => "th",
+            };
+            let label = if seconds > 0 {
+                format!("{} on {}{}", human_time(seconds), date_str, suffix)
+            } else {
+                format!("No activity on {}{}", date_str, suffix)
+            };
+            tooltips.push(label.clone());
+
+            let rect = Rectangle::new()
+                .set("x", x)
+                .set("y", y)
+                .set("width", w)
+                .set("height", h)
+                .set("fill", color_str)
+                .set("rx", radius)
+                .set("ry", radius);
+
+            let title = Title::new(&label);
+            let rect_with_title = rect.add(title);
+            document = document.add(rect_with_title);
         }
 
-        if let Err(err) = root.present() {
-            eprintln!("Error presenting drawing area: {:?}", err);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-        }
+        svg_buf = document.to_string();
     }
-
-    // Add rounded corners to rectangles
-    let radius = params.cell_size as f32 / 4.0;
-    svg_buf = svg_buf.replace(
-        "<rect ",
-        &format!("<rect rx=\"{:.1}\" ry=\"{:.1}\" ", radius, radius),
-    );
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -267,24 +275,17 @@ async fn make_heatmap_svg(Query(params): Query<SvgParams>) -> Response {
     (StatusCode::OK, headers, svg_buf).into_response()
 }
 
-// basic handler that responds with a static string
-async fn root() -> &'static str {
-    "Hello, World!"
-}
-
 #[tokio::main]
 async fn main() {
-    // initialize tracing
+    // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // build our application with a route
+    // Build application with a route
     let app = Router::new()
-        // `GET /` goes to `root`
-        .route("/", get(root))
-        // `GET /svg` goes to `make_heatmap_svg` with query params
-        .route("/svg", get(make_heatmap_svg));
+        // `GET /` goes to `make_heatmap_svg` with query params
+        .route("/", get(make_heatmap_svg));
 
-    // run our app with hyper, listening globally on port 3000
+    // Run app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

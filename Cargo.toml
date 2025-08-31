@@ -1,14 +1,12 @@
 [package]
 name = "hackatime-heatmap"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
 axum = { version = "0.8.4", features = ["query"] }
 chrono = "0.4.41"
 chrono-tz = "0.10.4"
-plotters = "0.3.7"
-plotters-svg = "0.3.7"
 reqwest = { version = "0.12.23", features = ["json"] }
 serde = "1.0.219"
 svg = "0.18.0"
