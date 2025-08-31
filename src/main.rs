@@ -1,4 +1,5 @@
 use axum::{Router, extract::State, http::StatusCode, http::header, routing::get};
+use tower_http::catch_panic::CatchPanicLayer;
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
 use std::time::{Duration, Instant};
@@ -19,6 +20,8 @@ const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
 const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
+const MAX_RESPONSE_CACHE_ENTRIES: usize = 200;
+const MAX_REQUEST_CACHE_ENTRIES: usize = 25;
 
 const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
     (235, 237, 240), // level 0 (no activity)
@@ -57,7 +60,7 @@ struct AppState {
     request_cache: Arc<Mutex<HashMap<String, (RequestData, Instant)>>>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
 struct SvgParams {
     id: Option<String>,
     #[serde(default = "default_timezone")]
@@ -72,6 +75,8 @@ struct SvgParams {
     theme: String,
     #[serde(default = "default_ranges")]
     ranges: String,
+    #[serde(default = "default_standalone")]
+    standalone: bool,
 }
 
 fn default_timezone() -> String {
@@ -91,6 +96,26 @@ fn default_theme() -> String {
 }
 fn default_ranges() -> String {
     "70,30,10".to_string()
+}
+fn default_standalone() -> bool {
+    false
+}
+
+fn enforce_cache_limit<K, V>(cache: &mut HashMap<K, (V, Instant)>, max_entries: usize)
+where
+    K: Eq + std::hash::Hash + Clone,
+{
+    if cache.len() >= max_entries {
+        // Collect entries with their timestamps
+        let mut entries: Vec<_> = cache.iter().map(|(k, (_, timestamp))| (k.clone(), *timestamp)).collect();
+        // Sort by timestamp (oldest first)
+        entries.sort_by_key(|(_, timestamp)| *timestamp);
+        // Remove oldest entries until we're under the limit
+        let to_remove = cache.len() - max_entries + 1;
+        for (key, _) in entries.into_iter().take(to_remove) {
+            cache.remove(&key);
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -126,6 +151,80 @@ fn human_time(seconds: u32) -> String {
     }
 }
 
+fn embed_page(svg: &str, standalone: bool) -> String {
+    if !standalone {
+        return svg.to_string();
+    }
+
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hackatime Heatmap</title>
+    <style>
+        :root {{
+            --bg-color: #ffffff;
+            --text-color: #24292f;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            :root {{
+                --bg-color: #0d1117;
+                --text-color: #c9d1d9;
+            }}
+        }}
+        body {{
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow: hidden;
+        }}
+        .container {{
+            text-align: center;
+            padding: 20px;
+        }}
+        .title {{
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-color);
+        }}
+        .heatmap-container {{
+            display: inline-block;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">Hackatime Activity Heatmap</h1>
+        <p>Hover over each cell to see detailed data for that day!</p>
+        <div class="heatmap-container">
+            {}
+        </div>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const currentTheme = params.get('theme') || 'dark';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const preferredTheme = prefersDark ? 'dark' : 'light';
+
+        if (currentTheme !== preferredTheme) {{
+            params.set('theme', preferredTheme);
+            window.location.search = params.toString();
+        }}
+    </script>
+</body>
+</html>"#,
+        svg
+    )
+}
+
 async fn make_heatmap_svg(
     State(state): State<AppState>,
     Query(params): Query<SvgParams>,
@@ -144,24 +243,36 @@ async fn make_heatmap_svg(
         return (
             StatusCode::BAD_REQUEST,
             "Invalid ranges parameter, must be three comma-separated integers".to_string(),
-        ).into_response();
+        )
+            .into_response();
     }
     if !(ranges[0] > ranges[1] && ranges[1] > ranges[2] && ranges[2] > 0) {
         return (
             StatusCode::BAD_REQUEST,
             "Invalid ranges parameter, must be three descending positive integers".to_string(),
-        ).into_response();
+        )
+            .into_response();
     }
     if ranges[0] > 100 || ranges[1] > 100 || ranges[2] > 100 {
         return (
             StatusCode::BAD_REQUEST,
             "Invalid ranges parameter, values must be within 0 and 100".to_string(),
-        ).into_response();
+        )
+            .into_response();
     }
+
+    let content_type = if params.standalone {
+        "text/html"
+    } else {
+        "image/svg+xml"
+    };
 
     let now = Instant::now();
     let cached_response = {
-        let cache = state.response_cache.lock().unwrap();
+        let cache = match state.response_cache.lock() {
+            Ok(cache) => cache,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+        };
         cache.get(&params).and_then(|(response, timestamp)| {
             if now.duration_since(*timestamp) < Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS)
             {
@@ -177,7 +288,7 @@ async fn make_heatmap_svg(
             StatusCode::OK,
             HeaderMap::from_iter([(
                 header::CONTENT_TYPE,
-                HeaderValue::from_static("image/svg+xml"),
+                HeaderValue::from_static(content_type),
             )]),
             response,
         )
@@ -201,7 +312,10 @@ async fn make_heatmap_svg(
     let mut tooltips: Vec<String> = Vec::new();
     {
         let cached_request = {
-            let cache = state.request_cache.lock().unwrap();
+            let cache = match state.request_cache.lock() {
+                Ok(cache) => cache,
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+            };
             cache.get(&id).and_then(|(request, timestamp)| {
                 if now.duration_since(*timestamp)
                     < Duration::from_secs(REQUEST_CACHE_DURATION_SECONDS)
@@ -223,22 +337,32 @@ async fn make_heatmap_svg(
                 id
             ))
             .await;
-            if let Err(err) = resp {
-                eprintln!("Error fetching data: {:?}", err);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-            }
+            let resp = match resp {
+                Ok(resp) => resp,
+                Err(err) => {
+                    eprintln!("Error fetching data: {:?}", err);
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+                }
+            };
 
             // Parse JSON response
-            let json_resp = resp.unwrap().json::<RequestData>().await;
-            if let Err(err) = json_resp {
-                eprintln!("Error parsing JSON: {:?}", err);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-            }
+            let json_resp = resp.json::<RequestData>().await;
+            let json_resp = match json_resp {
+                Ok(json_resp) => json_resp,
+                Err(err) => {
+                    eprintln!("Error parsing JSON: {:?}", err);
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+                }
+            };
 
-            spans = json_resp.unwrap().spans;
+            spans = json_resp.spans;
 
             {
-                let mut request_cache = state.request_cache.lock().unwrap();
+                let mut request_cache = match state.request_cache.lock() {
+                    Ok(cache) => cache,
+                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+                };
+                enforce_cache_limit(&mut request_cache, MAX_REQUEST_CACHE_ENTRIES);
                 request_cache.insert(
                     id,
                     (
@@ -252,7 +376,7 @@ async fn make_heatmap_svg(
         }
 
         // Calculate timestamps for one year ago and today in user's timezone
-        let one_year_ago_ts = tz
+        let one_year_ago_ts = match tz
             .with_ymd_and_hms(
                 one_year_ago.year(),
                 one_year_ago.month(),
@@ -262,22 +386,42 @@ async fn make_heatmap_svg(
                 0,
             )
             .single()
-            .unwrap()
-            .timestamp() as f64;
-        let today_end_ts = tz
+        {
+            Some(dt) => dt.timestamp() as f64,
+            None => {
+                eprintln!("Invalid date for one year ago");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+            }
+        };
+        let today_end_ts = match tz
             .with_ymd_and_hms(today.year(), today.month(), today.day(), 23, 59, 59)
             .single()
-            .unwrap()
-            .timestamp() as f64;
+        {
+            Some(dt) => dt.timestamp() as f64,
+            None => {
+                eprintln!("Invalid date for today");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+            }
+        };
         for span in spans
             .into_iter()
             .filter(|span| span.end_time >= one_year_ago_ts && span.start_time <= today_end_ts)
         {
             // Convert span start and end to user's timezone
-            let start_dt_utc =
-                chrono::DateTime::<chrono::Utc>::from_timestamp(span.start_time as i64, 0).unwrap();
-            let end_dt_utc =
-                chrono::DateTime::<chrono::Utc>::from_timestamp(span.end_time as i64, 0).unwrap();
+            let start_dt_utc = match chrono::DateTime::<chrono::Utc>::from_timestamp(span.start_time as i64, 0) {
+                Some(dt) => dt,
+                None => {
+                    eprintln!("Invalid start timestamp: {}", span.start_time);
+                    continue; // Skip invalid spans
+                }
+            };
+            let end_dt_utc = match chrono::DateTime::<chrono::Utc>::from_timestamp(span.end_time as i64, 0) {
+                Some(dt) => dt,
+                None => {
+                    eprintln!("Invalid end timestamp: {}", span.end_time);
+                    continue; // Skip invalid spans
+                }
+            };
             let start_local = start_dt_utc.with_timezone(&tz);
             let end_local = end_dt_utc.with_timezone(&tz);
             let start_date = start_local.date_naive();
@@ -291,7 +435,7 @@ async fn make_heatmap_svg(
                 let mut current = start_local;
                 let mut remaining = span.duration;
                 while current.date_naive() < end_date {
-                    let next_midnight = tz
+                    let next_midnight = match tz
                         .with_ymd_and_hms(
                             current.year(),
                             current.month(),
@@ -301,7 +445,13 @@ async fn make_heatmap_svg(
                             59,
                         )
                         .single()
-                        .unwrap();
+                    {
+                        Some(dt) => dt,
+                        None => {
+                            eprintln!("Invalid next midnight date");
+                            break; // Exit the loop on error
+                        }
+                    };
                     let seconds = (next_midnight.timestamp() - current.timestamp() + 1) as f64;
                     let entry = day_buckets.entry(current.date_naive()).or_insert(0);
                     let to_add = seconds.min(remaining).round() as u32;
@@ -408,17 +558,21 @@ async fn make_heatmap_svg(
             document = document.add(rect_with_title);
         }
 
-        svg_buf = document.to_string();
+        svg_buf = embed_page(&document.to_string(), params.standalone);
     }
 
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_static("image/svg+xml"),
+        HeaderValue::from_static(content_type),
     );
 
     {
-        let mut response_cache = state.response_cache.lock().unwrap();
+        let mut response_cache = match state.response_cache.lock() {
+            Ok(cache) => cache,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+        };
+        enforce_cache_limit(&mut response_cache, MAX_RESPONSE_CACHE_ENTRIES);
         response_cache.insert(params, (svg_buf.clone(), now));
     }
 
@@ -439,9 +593,18 @@ async fn main() {
     let app = Router::new()
         // `GET /` goes to `make_heatmap_svg` with query params
         .route("/", get(make_heatmap_svg))
+        .layer(CatchPanicLayer::new())
         .with_state(state);
 
     // Run app with hyper, listening globally on port 8282
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8282").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind("0.0.0.0:8282").await {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("Failed to bind to port 8282: {}", e);
+            return;
+        }
+    };
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("Server error: {}", e);
+    }
 }

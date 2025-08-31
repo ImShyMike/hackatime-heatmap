@@ -2,7 +2,7 @@
 
 Beautiful activity heatmap for your profile!
 
-<a href="https://heatmap.shymike.dev?id=263" title="Click to view detailed data for each day!">
+<a href="https://heatmap.shymike.dev?id=263&standalone=true" title="Click to view detailed data for each day!">
     <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://heatmap.shymike.dev?id=263&theme=dark">
         <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=263&theme=light">
@@ -16,7 +16,7 @@ Beautiful activity heatmap for your profile!
 You eitehr use the color sheme aware version:
 
 ```html
-<a href="https://heatmap.shymike.dev?id=YOUR_ID" title="Click to view detailed data for each day!">
+<a href="https://heatmap.shymike.dev?id=YOUR_ID&standalone=true" title="Click to view detailed data for each day!">
     <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://heatmap.shymike.dev?id=YOUR_ID&theme=dark">
         <img alt="Hackatime activity heatmap." src="https://heatmap.shymike.dev?id=YOUR_ID&theme=light">
@@ -41,6 +41,7 @@ All the parameters that can be adjusted are:
 - [Rounding](#rounding)
 - [Cell Size](#cell-size)
 - [Ranges](#ranges)
+- [Standalone](#standalone)
 
 Some example are:
 
@@ -100,3 +101,10 @@ The percentage ranges for each color as a 3 item string list. Defaults to `70,30
 
 - [https://heatmap.shymike.dev?id=1&ranges=80,50,20](https://heatmap.shymike.dev?id=1&ranges=80,50,20)
 - [https://heatmap.shymike.dev?id=1&ranges=75,50,25](https://heatmap.shymike.dev?id=1&ranges=75,50,25)
+
+### Standalone
+
+Whether or not to embed HTML into the request. Defaults to `false`
+
+- [https://heatmap.shymike.dev?id=1&standalone=true](https://heatmap.shymike.dev?id=1&standalone=true)
+- [https://heatmap.shymike.dev?id=1&standalone=false](https://heatmap.shymike.dev?id=1&standalone=false)
