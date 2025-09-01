@@ -1,5 +1,10 @@
-use axum::{Router, extract::State, http::StatusCode, http::header, routing::get};
-use tower_http::catch_panic::CatchPanicLayer;
+use axum::{
+    Router,
+    extract::{OriginalUri, State},
+    http::StatusCode,
+    http::header,
+    routing::get,
+};
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
 use std::time::{Duration, Instant};
@@ -7,6 +12,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tower_http::catch_panic::CatchPanicLayer;
 
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
@@ -107,7 +113,10 @@ where
 {
     if cache.len() >= max_entries {
         // Collect entries with their timestamps
-        let mut entries: Vec<_> = cache.iter().map(|(k, (_, timestamp))| (k.clone(), *timestamp)).collect();
+        let mut entries: Vec<_> = cache
+            .iter()
+            .map(|(k, (_, timestamp))| (k.clone(), *timestamp))
+            .collect();
         // Sort by timestamp (oldest first)
         entries.sort_by_key(|(_, timestamp)| *timestamp);
         // Remove oldest entries until we're under the limit
@@ -228,7 +237,11 @@ fn embed_page(svg: &str, standalone: bool) -> String {
 async fn make_heatmap_svg(
     State(state): State<AppState>,
     Query(params): Query<SvgParams>,
+    OriginalUri(uri): OriginalUri,
 ) -> Response {
+    let current_time = chrono::Utc::now().timestamp();
+    println!("{} - {}", current_time, uri);
+
     let id = match &params.id {
         Some(id) => id.clone(),
         None => return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response(),
@@ -286,10 +299,7 @@ async fn make_heatmap_svg(
     if let Some(response) = cached_response {
         return (
             StatusCode::OK,
-            HeaderMap::from_iter([(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static(content_type),
-            )]),
+            HeaderMap::from_iter([(header::CONTENT_TYPE, HeaderValue::from_static(content_type))]),
             response,
         )
             .into_response();
@@ -314,7 +324,9 @@ async fn make_heatmap_svg(
         let cached_request = {
             let cache = match state.request_cache.lock() {
                 Ok(cache) => cache,
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+                Err(_) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+                }
             };
             cache.get(&id).and_then(|(request, timestamp)| {
                 if now.duration_since(*timestamp)
@@ -360,7 +372,9 @@ async fn make_heatmap_svg(
             {
                 let mut request_cache = match state.request_cache.lock() {
                     Ok(cache) => cache,
-                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+                    Err(_) => {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
+                    }
                 };
                 enforce_cache_limit(&mut request_cache, MAX_REQUEST_CACHE_ENTRIES);
                 request_cache.insert(
@@ -408,20 +422,22 @@ async fn make_heatmap_svg(
             .filter(|span| span.end_time >= one_year_ago_ts && span.start_time <= today_end_ts)
         {
             // Convert span start and end to user's timezone
-            let start_dt_utc = match chrono::DateTime::<chrono::Utc>::from_timestamp(span.start_time as i64, 0) {
-                Some(dt) => dt,
-                None => {
-                    eprintln!("Invalid start timestamp: {}", span.start_time);
-                    continue; // Skip invalid spans
-                }
-            };
-            let end_dt_utc = match chrono::DateTime::<chrono::Utc>::from_timestamp(span.end_time as i64, 0) {
-                Some(dt) => dt,
-                None => {
-                    eprintln!("Invalid end timestamp: {}", span.end_time);
-                    continue; // Skip invalid spans
-                }
-            };
+            let start_dt_utc =
+                match chrono::DateTime::<chrono::Utc>::from_timestamp(span.start_time as i64, 0) {
+                    Some(dt) => dt,
+                    None => {
+                        eprintln!("Invalid start timestamp: {}", span.start_time);
+                        continue; // Skip invalid spans
+                    }
+                };
+            let end_dt_utc =
+                match chrono::DateTime::<chrono::Utc>::from_timestamp(span.end_time as i64, 0) {
+                    Some(dt) => dt,
+                    None => {
+                        eprintln!("Invalid end timestamp: {}", span.end_time);
+                        continue; // Skip invalid spans
+                    }
+                };
             let start_local = start_dt_utc.with_timezone(&tz);
             let end_local = end_dt_utc.with_timezone(&tz);
             let start_date = start_local.date_naive();
@@ -545,6 +561,7 @@ async fn make_heatmap_svg(
             tooltips.push(label.clone());
 
             let rect = Rectangle::new()
+                .set("title", label.clone())
                 .set("x", x)
                 .set("y", y)
                 .set("width", w)
@@ -562,10 +579,7 @@ async fn make_heatmap_svg(
     }
 
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static(content_type),
-    );
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
 
     {
         let mut response_cache = match state.response_cache.lock() {
@@ -604,6 +618,7 @@ async fn main() {
             return;
         }
     };
+    println!("Listening on http://localhost:8282");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("Server error: {}", e);
     }
