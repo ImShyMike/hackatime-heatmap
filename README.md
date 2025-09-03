@@ -26,6 +26,9 @@ You can either use the color scheme aware version:
 </a>
 ```
 
+> [!CAUTION]
+> Only the top url in the `a` tag can have the `standalone` tag set to `true`, otherwise the graph will not appear!
+
 Or the simple version:
 
 ```html
