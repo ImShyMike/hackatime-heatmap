@@ -219,10 +219,18 @@ fn embed_page(svg: &str, standalone: bool) -> String {
     </div>
     <script>
         const params = new URLSearchParams(window.location.search);
-        const currentTheme = params.get('theme') || 'dark';
+        const currentTheme = params.get('theme') || 'auto';
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const preferredTheme = prefersDark ? 'dark' : 'light';
-
+        
+        let preferredTheme;
+        if (currentTheme === 'auto') {{
+            preferredTheme = prefersDark ? 'dark' : 'light';
+        }} else if (currentTheme === 'catppuccin') {{
+            preferredTheme = prefersDark ? 'catppuccin_dark' : 'catppuccin_light';
+        }} else {{
+            preferredTheme = currentTheme;
+        }}
+        
         if (currentTheme !== preferredTheme) {{
             params.set('theme', preferredTheme);
             window.location.search = params.toString();
