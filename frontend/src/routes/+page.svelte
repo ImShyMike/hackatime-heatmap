@@ -28,6 +28,8 @@
 	let ranges: Array<number> = $state([70, 30, 10]);
 	let rangesString: string = $state('');
 	let useAutoTimezone: boolean = $state(false);
+	let imageLoaded: boolean = $state(false);
+	let loadFailed: boolean = $state(false);
 
 	let prefersDark: boolean = $state(false);
 	let pageTheme: PageTheme = $state(
@@ -132,7 +134,14 @@
 		rangesString = ranges.join(',');
 	});
 
+	$effect(() => {
+		imageLoaded = false;
+		loadFailed = false;
+		url; // Trigger when URL changes
+	});
+
 	function imageError(e: Event) {
+		loadFailed = true;
 		console.error('Failed to load image:', e);
 	}
 
@@ -426,7 +435,7 @@
 				Preview:
 			</h2>
 			<div
-				class="rounded-lg p-4 transition-all duration-500 ease-in-out"
+				class="relative rounded-lg p-4 transition-all duration-500 ease-in-out"
 				style:background-color={darkBackground
 					? 'var(--color-github-dark)'
 					: 'var(--color-github-light)'}
@@ -434,15 +443,26 @@
 					? '1px solid var(--color-github-border-dark)'
 					: '1px solid var(--color-github-border-light)'}
 			>
+				{#if !imageLoaded && !loadFailed}
+					<div class="absolute inset-0 flex items-center justify-center z-10">
+						<div class="flex items-center gap-3">
+							<div class="animate-spin h-6 w-6 border-2 border-text border-t-transparent rounded-full"></div>
+							<p class="text-text">Loading heatmap...</p>
+						</div>
+					</div>
+				{:else if loadFailed}
+					<div class="absolute inset-0 flex items-center justify-center z-10">
+						<p class="text-red">Failed to load heatmap. Please check your configuration.</p>
+					</div>
+				{/if}
 				<img
-					src="{url}{theme === 'catppuccin'
-						? '_' + pageTheme
-						: theme === ''
-							? '&theme=' + pageTheme
-							: ''}"
+					src="{url}{mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')
+						? (theme === 'catppuccin' ? '_' : '&theme=') + pageTheme
+						: ''}"
 					alt="Error loading heatmap preview..."
 					onerror={imageError}
-					class="h-auto max-w-full rounded-md text-red transition-opacity duration-300 ease-in-out"
+					onload={() => {imageLoaded = true}}
+					class="h-auto max-w-full rounded-md text-red transition-opacity duration-300 ease-in-out {imageLoaded ? 'opacity-100' : 'opacity-0'}"
 				/>
 			</div>
 		</div>
