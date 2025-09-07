@@ -496,7 +496,7 @@
 				Preview:
 			</h2>
 			<div
-				class="relative rounded-lg p-4 transition-all duration-500 ease-in-out"
+				class="relative rounded-lg sm:p-2 md:p-4 p-1 transition-all duration-500 ease-in-out"
 				style:background-color={darkBackground
 					? 'var(--color-github-dark)'
 					: 'var(--color-github-light)'}
