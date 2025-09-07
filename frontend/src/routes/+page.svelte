@@ -163,7 +163,7 @@
 
 <div class="min-h-screen bg-base transition-colors duration-500 ease-in-out">
 	<div class="mx-auto max-w-4xl space-y-6 p-6">
-		<div class="flex items-center justify-between">
+		<div class="mb-3 flex items-center justify-between">
 			<h1 class="text-3xl font-bold text-text transition-colors duration-500 ease-in-out">
 				Hackatime Heatmap
 			</h1>
@@ -193,6 +193,10 @@
 				</div>
 			</button>
 		</div>
+
+		<p class="text-subtext1 transition-colors duration-500 ease-in-out">
+			Generate a GitHub-style contribution heatmap for your Hackatime activity!
+		</p>
 
 		<div class="space-y-4">
 			<!-- Configuration Mode Toggle -->
