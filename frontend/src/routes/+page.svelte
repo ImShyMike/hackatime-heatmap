@@ -41,7 +41,7 @@
 				}
 				return document.documentElement.classList.contains('mocha') ? 'dark' : 'light';
 			}
-			return 'light';
+			return document.documentElement.classList.contains('mocha') ? 'dark' : 'light';
 		})()
 	);
 
