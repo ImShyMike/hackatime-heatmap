@@ -20,13 +20,13 @@
 	let configMode: ConfigMode = $state('simple');
 	let mode: Mode = $state('theme-aware');
 	let id: string = $state('1');
-	let theme: Theme = $state('light');
+	let theme: Theme = $state('');
 	let timezone: string = $state('UTC');
 	let cellSize: number = $state(15);
 	let padding: number = $state(2);
 	let rounding: number = $state(50);
 	let ranges: Array<number> = $state([70, 30, 10]);
-	let rangesString: string = $state('');
+	let rangesString: string = $state('70,30,10');
 	let useAutoTimezone: boolean = $state(false);
 	let imageLoaded: boolean = $state(false);
 	let loadFailed: boolean = $state(false);
@@ -41,7 +41,9 @@
 				}
 				return document.documentElement.classList.contains('mocha') ? 'dark' : 'light';
 			}
-			return 'light'; // SSR
+			return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+				? 'dark'
+				: 'light';
 		})()
 	);
 
@@ -140,6 +142,10 @@
 		url; // Trigger when URL changes
 	});
 
+	function imageLoad() {
+		imageLoaded = true;
+	}
+
 	function imageError(e: Event) {
 		loadFailed = true;
 		console.error('Failed to load image:', e);
@@ -194,9 +200,35 @@
 			</button>
 		</div>
 
-		<p class="text-subtext1 transition-colors duration-500 ease-in-out">
-			Generate a GitHub-style contribution heatmap for your Hackatime activity!
-		</p>
+		<div class="">
+			<p class="inline text-subtext1 transition-colors duration-500 ease-in-out sm:block">
+				Generate a GitHub-style contribution heatmap for your Hackatime activity!
+			</p>
+			<p class="inline text-subtext1 transition-colors duration-500 ease-in-out sm:block">
+				Don't forget to also check out the <a
+					class="text-blue hover:underline"
+					target="_blank"
+					href="https://github.com/ImShyMike/hackatime-heatmap">GitHub repository</a
+				>
+				:3 (and maybe even give it a
+				<a href="https://github.com/ImShyMike/hackatime-heatmap/stargazers" target="_blank"
+					><span class="group relative inline-flex cursor-pointer items-center text-yellow">
+						<span class="transition-opacity duration-300 group-hover:opacity-0">star</span>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="29"
+							height="29"
+							viewBox="0 0 24 24"
+							class="absolute opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+							><!-- Icon from Material Symbols by Google - https://github.com/google/material-design-icons/blob/master/LICENSE --><path
+								fill="currentColor"
+								d="m7.625 6.4l2.8-3.625q.3-.4.713-.587T12 2t.863.188t.712.587l2.8 3.625l4.25 1.425q.65.2 1.025.738t.375 1.187q0 .3-.088.6t-.287.575l-2.75 3.9l.1 4.1q.025.875-.575 1.475t-1.4.6q-.05 0-.55-.075L12 19.675l-4.475 1.25q-.125.05-.275.063T6.975 21q-.8 0-1.4-.6T5 18.925l.1-4.125l-2.725-3.875q-.2-.275-.288-.575T2 9.75q0-.625.363-1.162t1.012-.763zM8.85 8.125L4 9.725L7.1 14.2L7 18.975l5-1.375l5 1.4l-.1-4.8L20 9.775l-4.85-1.65L12 4zM12 11.5"
+							/></svg
+						>
+					</span>
+				</a>)
+			</p>
+		</div>
 
 		<div class="space-y-4">
 			<!-- Configuration Mode Toggle -->
@@ -448,14 +480,16 @@
 					: '1px solid var(--color-github-border-light)'}
 			>
 				{#if !imageLoaded && !loadFailed}
-					<div class="absolute inset-0 flex items-center justify-center z-10">
+					<div class="absolute inset-0 z-10 flex items-center justify-center">
 						<div class="flex items-center gap-3">
-							<div class="animate-spin h-6 w-6 border-2 border-text border-t-transparent rounded-full"></div>
+							<div
+								class="h-6 w-6 animate-spin rounded-full border-2 border-text border-t-transparent"
+							></div>
 							<p class="text-text">Loading heatmap...</p>
 						</div>
 					</div>
 				{:else if loadFailed}
-					<div class="absolute inset-0 flex items-center justify-center z-10">
+					<div class="absolute inset-0 z-10 flex items-center justify-center">
 						<p class="text-red">Failed to load heatmap. Please check your configuration.</p>
 					</div>
 				{/if}
@@ -465,8 +499,10 @@
 						: ''}"
 					alt="Error loading heatmap preview..."
 					onerror={imageError}
-					onload={() => {imageLoaded = true}}
-					class="h-auto max-w-full rounded-md text-red transition-opacity duration-300 ease-in-out {imageLoaded ? 'opacity-100' : 'opacity-0'}"
+					onload={imageLoad}
+					class="h-auto max-w-full rounded-md text-red transition-opacity duration-300 ease-in-out {imageLoaded
+						? 'opacity-100'
+						: 'opacity-0'}"
 				/>
 			</div>
 		</div>

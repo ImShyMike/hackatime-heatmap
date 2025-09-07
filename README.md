@@ -11,6 +11,8 @@ Beautiful activity heatmap for your profile!
 
 <sub>^^^ Those are my stats!</sub>
 
+### [Make and customize your own here!](https://hackatime-heatmap.pages.dev)
+
 ---
 
 ## Usage
