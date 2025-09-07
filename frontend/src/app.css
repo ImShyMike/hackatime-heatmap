@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+@import '@catppuccin/tailwindcss/mocha.css';
+
+@custom-variant dark (&:where(.mocha, .mocha *));
+
+@theme {
+	/* Base colors */
+	--color-base: var(--catppuccin-color-base);
+	--color-mantle: var(--catppuccin-color-mantle);
+	--color-crust: var(--catppuccin-color-crust);
+	--color-surface0: var(--catppuccin-color-surface0);
+	--color-surface1: var(--catppuccin-color-surface1);
+	--color-surface2: var(--catppuccin-color-surface2);
+	--color-overlay0: var(--catppuccin-color-overlay0);
+	--color-overlay1: var(--catppuccin-color-overlay1);
+	--color-overlay2: var(--catppuccin-color-overlay2);
+	--color-subtext0: var(--catppuccin-color-subtext0);
+	--color-subtext1: var(--catppuccin-color-subtext1);
+	--color-text: var(--catppuccin-color-text);
+
+	/* Accent colors */
+	--color-rosewater: var(--catppuccin-color-rosewater);
+	--color-flamingo: var(--catppuccin-color-flamingo);
+	--color-pink: var(--catppuccin-color-pink);
+	--color-mauve: var(--catppuccin-color-mauve);
+	--color-red: var(--catppuccin-color-red);
+	--color-maroon: var(--catppuccin-color-maroon);
+	--color-peach: var(--catppuccin-color-peach);
+	--color-yellow: var(--catppuccin-color-yellow);
+	--color-green: var(--catppuccin-color-green);
+	--color-teal: var(--catppuccin-color-teal);
+	--color-sky: var(--catppuccin-color-sky);
+	--color-sapphire: var(--catppuccin-color-sapphire);
+	--color-blue: var(--catppuccin-color-blue);
+	--color-lavender: var(--catppuccin-color-lavender);
+
+	/* GitHub colors */
+	--color-github-light: #ffffff;
+	--color-github-dark: #0d1117;
+	--color-github-border-light: #d0d7de;
+	--color-github-border-dark: #30363d;
+}
