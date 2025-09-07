@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+
 	import SyntaxHighlight from '$lib/SyntaxHighlight.svelte';
+	import RangeSlider from 'svelte-range-slider-pips';
 
 	type Theme = 'light' | 'dark' | '' | 'catppuccin' | 'catppuccin_dark' | 'catppuccin_light';
 	type PageTheme = 'light' | 'dark';
@@ -451,6 +453,31 @@
 						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text placeholder-subtext0 shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
 						placeholder="e.g., 70,30,10"
 					/>
+					<div class="range-slider-container">
+						<RangeSlider 
+							bind:values={ranges} 
+							min={0} 
+							max={100}
+							step={1}
+							pips
+							float
+							suffix="%"
+							hoverable
+							precision={0}
+							reversed={true}
+							pushy={true}
+							--range-slider="var(--color-surface1)"
+							--range-handle-inactive="var(--color-surface2)"
+							--range-handle="var(--color-blue)"
+							--range-handle-focus="var(--color-sapphire)"
+							--range-pip="var(--color-overlay0)"
+							--range-pip-text="var(--color-subtext1)"
+							--range-pip-active="var(--color-text)"
+							--range-pip-hover="var(--color-blue)"
+							--range-float="var(--color-surface0)"
+							--range-float-text="var(--color-text)"
+						/>
+					</div>
 				</div>
 			{/if}
 		</div>
