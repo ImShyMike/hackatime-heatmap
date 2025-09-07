@@ -107,6 +107,7 @@
 			bind:this={codeElement}
 			class="language-{language} !bg-transparent text-sm text-text dark:text-text"
 			onclick={handleClick}
+			aria-label="Code block"
 			role={readonly ? 'textbox' : undefined}
 			style="cursor: {readonly ? 'pointer' : 'default'}">{code}</code
 		></pre>

@@ -26,6 +26,7 @@ const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
 const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
+const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=300"); // 5 minutes
 const MAX_RESPONSE_CACHE_ENTRIES: usize = 200;
 const MAX_REQUEST_CACHE_ENTRIES: usize = 25;
 
@@ -125,6 +126,15 @@ where
             cache.remove(&key);
         }
     }
+}
+fn build_headers(content_type: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(content_type).unwrap(),
+    );
+    headers.insert(header::CACHE_CONTROL, CACHE_HEADER);
+    headers
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -250,6 +260,22 @@ async fn make_heatmap_svg(
     let current_time = chrono::Utc::now().timestamp();
     println!("{} - {}", current_time, uri);
 
+    let now = Instant::now();
+    let cached_response = {
+        let cache = match state.response_cache.lock() {
+            Ok(cache) => cache,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
+        };
+        cache.get(&params).and_then(|(response, timestamp)| {
+            if now.duration_since(*timestamp) < Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS)
+            {
+                Some(response.clone())
+            } else {
+                None
+            }
+        })
+    };
+
     let id = match &params.id {
         Some(id) => id.clone(),
         None => return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response(),
@@ -288,29 +314,8 @@ async fn make_heatmap_svg(
         "image/svg+xml"
     };
 
-    let now = Instant::now();
-    let cached_response = {
-        let cache = match state.response_cache.lock() {
-            Ok(cache) => cache,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
-        };
-        cache.get(&params).and_then(|(response, timestamp)| {
-            if now.duration_since(*timestamp) < Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS)
-            {
-                Some(response.clone())
-            } else {
-                None
-            }
-        })
-    };
-
     if let Some(response) = cached_response {
-        return (
-            StatusCode::OK,
-            HeaderMap::from_iter([(header::CONTENT_TYPE, HeaderValue::from_static(content_type))]),
-            response,
-        )
-            .into_response();
+        return (StatusCode::OK, build_headers(content_type), response).into_response();
     }
 
     // Parse timezone string
@@ -586,9 +591,6 @@ async fn make_heatmap_svg(
         svg_buf = embed_page(&document.to_string(), params.standalone);
     }
 
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
-
     {
         let mut response_cache = match state.response_cache.lock() {
             Ok(cache) => cache,
@@ -598,7 +600,7 @@ async fn make_heatmap_svg(
         response_cache.insert(params, (svg_buf.clone(), now));
     }
 
-    (StatusCode::OK, headers, svg_buf).into_response()
+    (StatusCode::OK, build_headers(content_type), svg_buf).into_response()
 }
 
 #[tokio::main]

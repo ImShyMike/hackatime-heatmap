@@ -300,7 +300,7 @@
 			<!-- Mode -->
 			<div class="space-y-2">
 				<label
-					for="mode-nselect"
+					for="mode-select"
 					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
 				>
 					Mode:
