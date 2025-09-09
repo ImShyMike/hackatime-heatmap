@@ -24,9 +24,9 @@ use svg::node::element::{Rectangle, Title};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
-const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
-const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 5; // (5 minutes)
-const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=300"); // 5 minutes
+const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
+const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
+const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
 const MAX_RESPONSE_CACHE_ENTRIES: usize = 200;
 const MAX_REQUEST_CACHE_ENTRIES: usize = 25;
 
