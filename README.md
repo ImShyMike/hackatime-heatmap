@@ -1,6 +1,6 @@
 # Hackatime Heatmap
 
-Beautiful activity heatmap for your profile!
+Easy to set up [Hackatime](https://hackatime.hackclub.com) coding activity heatmap for your profile!
 
 <a href="https://heatmap.shymike.dev?id=263&standalone=true" title="Click to view detailed data for each day!">
     <picture>
