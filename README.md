@@ -11,7 +11,7 @@ Easy to set up [Hackatime](https://hackatime.hackclub.com) coding activity heatm
 
 <sub>^^^ Those are my stats!</sub>
 
-### [Make and customize your own here!](https://hackatime-heatmap.pages.dev)
+### [Make and customize your own here!](https://hackatime-heatmap.shymike.dev)
 
 ---
 
