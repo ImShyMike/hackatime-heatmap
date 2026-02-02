@@ -1,25 +1,27 @@
-use axum::{
-    Router,
-    extract::{OriginalUri, State},
-    http::StatusCode,
-    http::header,
-    routing::get,
-};
+mod pallete;
+
+use axum::Router;
+use axum::extract::{OriginalUri, Query, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
+
 use std::collections::HashMap;
 use std::time::Duration;
+
 use tower_http::catch_panic::CatchPanicLayer;
 
-use axum::http::{HeaderMap, HeaderValue};
-use axum::response::{IntoResponse, Response};
-
-use axum::extract::Query;
 use serde::Deserialize;
+
 use svg::Document;
 use svg::node::element::{Rectangle, Title};
 
 use moka::sync::Cache;
+
+use crate::pallete::{PALETTES, get_pallete};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
@@ -28,37 +30,6 @@ const MAX_RESPONSE_CACHE_ENTRIES: u64 = 200;
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const MAX_REQUEST_CACHE_ENTRIES: u64 = 25;
 const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
-
-const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
-    (235, 237, 240), // level 0 (no activity)
-    (155, 233, 168), // level 1
-    (64, 196, 99),   // level 2
-    (48, 161, 78),   // level 3
-    (33, 110, 57),   // level 4 (most activity)
-];
-const GITHUB_PALETTE_DARK: [(u8, u8, u8); 5] = [
-    (22, 27, 34),    // level 0 (no activity)
-    (0, 92, 46),     // level 1
-    (0, 130, 60),    // level 2
-    (57, 166, 84),   // level 3
-    (112, 201, 133), // level 4 (most activity)
-];
-
-const PALLETE_CATPUCCIN_FRAPPE: [(u8, u8, u8); 5] = [
-    (204, 208, 218), // level 0 (no activity)
-    (64, 160, 43),   // level 1
-    (223, 142, 29),  // level 2
-    (254, 100, 11),  // level 3
-    (210, 15, 57),   // level 4 (most activity)
-];
-
-const PALLETE_CATPUCCIN_MOCHA: [(u8, u8, u8); 5] = [
-    (49, 50, 68),    // level 0 (no activity)
-    (166, 227, 161), // level 1
-    (249, 226, 175), // level 2
-    (250, 179, 135), // level 3
-    (243, 139, 168), // level 4 (most activity)
-];
 
 #[derive(Clone)]
 struct AppState {
@@ -446,30 +417,9 @@ async fn make_heatmap_svg(
             .collect();
         values.sort_unstable();
         let max_duration = *values.last().unwrap_or(&0);
-        let get_color = |v: u32| -> usize {
-            if v < 60 {
-                0
-            } else {
-                let ratio = v as f32 / max_duration as f32;
-                if ratio >= ranges[0] as f32 / 100.0 {
-                    4
-                } else if ratio >= ranges[1] as f32 / 100.0 {
-                    3
-                } else if ratio >= ranges[2] as f32 / 100.0 {
-                    2
-                } else {
-                    1
-                }
-            }
-        };
 
         // Select palette based on theme param (default: dark)
-        let palette = match params.theme.as_str() {
-            "light" => &PALETTE_GITHUB_LIGHT,
-            "catppuccin_light" => &PALLETE_CATPUCCIN_FRAPPE,
-            "catppuccin_dark" => &PALLETE_CATPUCCIN_MOCHA,
-            _ => &GITHUB_PALETTE_DARK,
-        };
+        let selected_palette = get_pallete(PALETTES, &params.theme);
 
         for (i, date) in all_dates.iter().enumerate() {
             let seconds = *day_buckets.get(date).unwrap_or(&0);
@@ -479,7 +429,7 @@ async fn make_heatmap_svg(
             let y = (row * params.cell_size + params.padding * (row + 1)) as i32;
             let w = params.cell_size as i32;
             let h = params.cell_size as i32;
-            let color = palette[get_color(seconds)];
+            let color = selected_palette.calculate_color(seconds, max_duration, &ranges);
             let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
 
             // Add tooltip
