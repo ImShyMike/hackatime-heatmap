@@ -24,10 +24,10 @@ use moka::sync::Cache;
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
 const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
-const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
-const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
 const MAX_RESPONSE_CACHE_ENTRIES: u64 = 200;
+const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const MAX_REQUEST_CACHE_ENTRIES: u64 = 25;
+const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
 
 const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
     (235, 237, 240), // level 0 (no activity)
@@ -539,7 +539,6 @@ async fn main() {
 
     // Build application with a route
     let app = Router::new()
-        // `GET /` goes to `make_heatmap_svg` with query params
         .route("/", get(make_heatmap_svg))
         .layer(CatchPanicLayer::new())
         .with_state(state);
