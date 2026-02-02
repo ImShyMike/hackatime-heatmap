@@ -7,11 +7,8 @@ use axum::{
 };
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
-use std::time::{Duration, Instant};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
+use std::time::Duration;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use axum::http::{HeaderMap, HeaderValue};
@@ -22,13 +19,15 @@ use serde::Deserialize;
 use svg::Document;
 use svg::node::element::{Rectangle, Title};
 
+use moka::sync::Cache;
+
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
 const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
-const MAX_RESPONSE_CACHE_ENTRIES: usize = 200;
-const MAX_REQUEST_CACHE_ENTRIES: usize = 25;
+const MAX_RESPONSE_CACHE_ENTRIES: u64 = 200;
+const MAX_REQUEST_CACHE_ENTRIES: u64 = 25;
 
 const PALETTE_GITHUB_LIGHT: [(u8, u8, u8); 5] = [
     (235, 237, 240), // level 0 (no activity)
@@ -63,70 +62,38 @@ const PALLETE_CATPUCCIN_MOCHA: [(u8, u8, u8); 5] = [
 
 #[derive(Clone)]
 struct AppState {
-    response_cache: Arc<Mutex<HashMap<SvgParams, (String, Instant)>>>,
-    request_cache: Arc<Mutex<HashMap<String, (RequestData, Instant)>>>,
+    response_cache: Cache<SvgParams, String>,
+    request_cache: Cache<String, RequestData>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
+#[serde(default)]
 struct SvgParams {
     id: Option<String>,
-    #[serde(default = "default_timezone")]
     timezone: String,
-    #[serde(default = "default_cell_size")]
     cell_size: usize,
-    #[serde(default = "default_padding")]
     padding: usize,
-    #[serde(default = "default_rounding")]
     rounding: u8,
-    #[serde(default = "default_theme")]
     theme: String,
-    #[serde(default = "default_ranges")]
     ranges: String,
-    #[serde(default = "default_standalone")]
     standalone: bool,
 }
 
-fn default_timezone() -> String {
-    "Europe/London".to_string()
-}
-fn default_cell_size() -> usize {
-    15
-}
-fn default_padding() -> usize {
-    2
-}
-fn default_rounding() -> u8 {
-    50
-}
-fn default_theme() -> String {
-    "dark".to_string()
-}
-fn default_ranges() -> String {
-    "70,30,10".to_string()
-}
-fn default_standalone() -> bool {
-    false
-}
-
-fn enforce_cache_limit<K, V>(cache: &mut HashMap<K, (V, Instant)>, max_entries: usize)
-where
-    K: Eq + std::hash::Hash + Clone,
-{
-    if cache.len() >= max_entries {
-        // Collect entries with their timestamps
-        let mut entries: Vec<_> = cache
-            .iter()
-            .map(|(k, (_, timestamp))| (k.clone(), *timestamp))
-            .collect();
-        // Sort by timestamp (oldest first)
-        entries.sort_by_key(|(_, timestamp)| *timestamp);
-        // Remove oldest entries until we're under the limit
-        let to_remove = cache.len() - max_entries + 1;
-        for (key, _) in entries.into_iter().take(to_remove) {
-            cache.remove(&key);
+impl Default for SvgParams {
+    fn default() -> Self {
+        Self {
+            id: None,
+            timezone: "Europe/London".to_string(),
+            cell_size: 15,
+            padding: 2,
+            rounding: 50,
+            theme: "dark".to_string(),
+            ranges: "70,30,10".to_string(),
+            standalone: false,
         }
     }
 }
+
 fn build_headers(content_type: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -260,21 +227,7 @@ async fn make_heatmap_svg(
     let current_time = chrono::Utc::now().timestamp();
     println!("{} - {}", current_time, uri);
 
-    let now = Instant::now();
-    let cached_response = {
-        let cache = match state.response_cache.lock() {
-            Ok(cache) => cache,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
-        };
-        cache.get(&params).and_then(|(response, timestamp)| {
-            if now.duration_since(*timestamp) < Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS)
-            {
-                Some(response.clone())
-            } else {
-                None
-            }
-        })
-    };
+    let cached_response = state.response_cache.get(&params);
 
     let id = match &params.id {
         Some(id) => id.clone(),
@@ -334,23 +287,7 @@ async fn make_heatmap_svg(
     let mut day_buckets: HashMap<chrono::NaiveDate, u32> = HashMap::new();
     let mut tooltips: Vec<String> = Vec::new();
     {
-        let cached_request = {
-            let cache = match state.request_cache.lock() {
-                Ok(cache) => cache,
-                Err(_) => {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-                }
-            };
-            cache.get(&id).and_then(|(request, timestamp)| {
-                if now.duration_since(*timestamp)
-                    < Duration::from_secs(REQUEST_CACHE_DURATION_SECONDS)
-                {
-                    Some(request.clone())
-                } else {
-                    None
-                }
-            })
-        };
+        let cached_request = state.request_cache.get(&id);
 
         let spans: Vec<Span>;
         if let Some(request) = cached_request {
@@ -382,24 +319,12 @@ async fn make_heatmap_svg(
 
             spans = json_resp.spans;
 
-            {
-                let mut request_cache = match state.request_cache.lock() {
-                    Ok(cache) => cache,
-                    Err(_) => {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-                    }
-                };
-                enforce_cache_limit(&mut request_cache, MAX_REQUEST_CACHE_ENTRIES);
-                request_cache.insert(
-                    id,
-                    (
-                        RequestData {
-                            spans: spans.clone(),
-                        },
-                        now,
-                    ),
-                );
-            }
+            state.request_cache.insert(
+                id,
+                RequestData {
+                    spans: spans.clone(),
+                },
+            );
         }
 
         // Calculate timestamps for one year ago and today in user's timezone
@@ -591,14 +516,7 @@ async fn make_heatmap_svg(
         svg_buf = embed_page(&document.to_string(), params.standalone);
     }
 
-    {
-        let mut response_cache = match state.response_cache.lock() {
-            Ok(cache) => cache,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response(),
-        };
-        enforce_cache_limit(&mut response_cache, MAX_RESPONSE_CACHE_ENTRIES);
-        response_cache.insert(params, (svg_buf.clone(), now));
-    }
+    state.response_cache.insert(params, svg_buf.clone());
 
     (StatusCode::OK, build_headers(content_type), svg_buf).into_response()
 }
@@ -609,8 +527,14 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let state = AppState {
-        response_cache: Arc::new(Mutex::new(HashMap::new())),
-        request_cache: Arc::new(Mutex::new(HashMap::new())),
+        response_cache: Cache::builder()
+            .max_capacity(MAX_RESPONSE_CACHE_ENTRIES)
+            .time_to_live(Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS))
+            .build(),
+        request_cache: Cache::builder()
+            .max_capacity(MAX_REQUEST_CACHE_ENTRIES)
+            .time_to_live(Duration::from_secs(REQUEST_CACHE_DURATION_SECONDS))
+            .build(),
     };
 
     // Build application with a route

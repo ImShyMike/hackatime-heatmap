@@ -1,6 +1,6 @@
 [package]
 name = "hackatime-heatmap"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 
 [profile.release]
@@ -12,13 +12,14 @@ strip = true
 debug = false
 
 [dependencies]
-axum = { version = "0.8.4", features = ["query"] }
-chrono = "0.4.41"
-chrono-tz = "0.10.4"
-reqwest = { version = "0.12.23", features = ["json"] }
-serde = "1.0.219"
-svg = "0.18.0"
-tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread"] }
-tower = "0.5.2"
-tower-http = { version = "0.6.2", features = ["catch-panic"] }
-tracing-subscriber = "0.3.20"
+axum = { version = "0.8.8", features = ["query", "tokio", "original-uri", "http1", "http2"], default-features = false }
+chrono = { version = "0.4.43", features = ["now"], default-features = false }
+chrono-tz = { version = "0.10.4", default-features = false }
+moka = { version = "0.12.13", features = ["sync"], default-features = false }
+reqwest = { version = "0.13.1", features = ["json"], default-features = false }
+serde = { version = "1.0.228", default-features = false }
+svg = { version = "0.18.0", default-features = false }
+tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread"] }
+tower = { version = "0.5.3", default-features = false }
+tower-http = { version = "0.6.2", features = ["catch-panic"], default-features = false }
+tracing-subscriber = { version = "0.3.22", features = ["fmt"], default-features = false }
