@@ -376,94 +376,96 @@
 				/>
 			</div>
 
-			<!-- Mode -->
-			<div class="space-y-2">
-				<label
-					for="mode-select"
-					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-				>
-					Mode:
-				</label>
-				<select
-					id="mode-select"
-					bind:value={mode}
-					class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-				>
-					<option value="simple">Simple</option>
-					<option value="theme-aware">Theme Aware</option>
-				</select>
-			</div>
-
-			<!-- Theme -->
-			<div class="space-y-2">
-				<label
-					for="theme-select"
-					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-				>
-					Theme:
-				</label>
-				<select
-					id="theme-select"
-					bind:value={theme}
-					class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-				>
-					{#if mode === 'theme-aware'}
-						<option value="">Auto</option>
-						<option value="catppuccin">Auto Catppuccin</option>
-					{:else}
-						<option value="light">Light</option>
-						<option value="dark">Dark</option>
-						<option value="catppuccin_light">Catppuccin Light</option>
-						<option value="catppuccin_dark">Catppuccin Dark</option>
-					{/if}
-				</select>
-			</div>
-
-			<!-- Labels -->
-			<div class="space-y-2">
-				<label
-					for="show-labels"
-					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-				>
-					Show Labels:
-				</label>
-				<select
-					id="show-labels"
-					bind:value={labels}
-					class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-				>
-					<option value={false}>No</option>
-					<option value={true}>Yes</option>
-				</select>
-			</div>
-
-			<!-- Year -->
-			<div class="space-y-2">
-				<label
-					for="year-mode"
-					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-				>
-					Date Range:
-				</label>
-				<select
-					id="year-mode"
-					bind:value={yearMode}
-					class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-				>
-					<option value="">Last 365 days</option>
-					<option value="current">Current year</option>
-					<option value="custom">Specific year</option>
-				</select>
-				{#if yearMode === 'custom'}
-					<input
-						id="custom-year"
-						type="number"
-						bind:value={customYear}
-						min="2000"
-						max="2100"
+			<!-- Mode and Theme -->
+			<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+				<div class="space-y-2">
+					<label
+						for="mode-select"
+						class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+					>
+						Mode:
+					</label>
+					<select
+						id="mode-select"
+						bind:value={mode}
 						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-					/>
-				{/if}
+					>
+						<option value="simple">Simple</option>
+						<option value="theme-aware">Theme Aware</option>
+					</select>
+				</div>
+
+				<div class="space-y-2">
+					<label
+						for="theme-select"
+						class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+					>
+						Theme:
+					</label>
+					<select
+						id="theme-select"
+						bind:value={theme}
+						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+					>
+						{#if mode === 'theme-aware'}
+							<option value="">Auto</option>
+							<option value="catppuccin">Auto Catppuccin</option>
+						{:else}
+							<option value="light">Light</option>
+							<option value="dark">Dark</option>
+							<option value="catppuccin_light">Catppuccin Light</option>
+							<option value="catppuccin_dark">Catppuccin Dark</option>
+						{/if}
+					</select>
+				</div>
+			</div>
+
+			<!-- Labels and Year -->
+			<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+				<div class="space-y-2">
+					<label
+						for="show-labels"
+						class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+					>
+						Show Labels:
+					</label>
+					<select
+						id="show-labels"
+						bind:value={labels}
+						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+					>
+						<option value={false}>No</option>
+						<option value={true}>Yes</option>
+					</select>
+				</div>
+
+				<div class="space-y-2">
+					<label
+						for="year-mode"
+						class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+					>
+						Date Range:
+					</label>
+					<select
+						id="year-mode"
+						bind:value={yearMode}
+						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+					>
+						<option value="">Last 365 days</option>
+						<option value="current">Current year</option>
+						<option value="custom">Specific year</option>
+					</select>
+					{#if yearMode === 'custom'}
+						<input
+							id="custom-year"
+							type="number"
+							bind:value={customYear}
+							min="2000"
+							max="2100"
+							class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+						/>
+					{/if}
+				</div>
 			</div>
 
 			<!-- Advanced Options -->
