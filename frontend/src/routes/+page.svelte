@@ -15,9 +15,9 @@
 		mode: 'theme-aware' as Mode,
 		theme: '' as Theme,
 		timezone: 'UTC',
-		cellSize: 15,
-		padding: 2,
-		rounding: 50,
+		cellSize: 10,
+		padding: 3,
+		rounding: 20,
 		labels: false,
 		ranges: [70, 30, 10],
 		yearMode: '' as YearMode,
@@ -212,10 +212,27 @@
 
 	let generatedHtml = $derived.by(() => {
 		if (mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')) {
-			return `<a href="${url}&standalone=true" title="Click to view detailed data for each day!">
+			const darkTheme = theme === 'catppuccin' ? 'catppuccin_dark' : 'dark';
+			const lightTheme = theme === 'catppuccin' ? 'catppuccin_light' : 'light';
+
+			const currentUrl = new URL(url, baseUrl);
+
+			const darkParams = new URLSearchParams(currentUrl.search);
+			darkParams.set('theme', darkTheme);
+			const darkUrl = `${baseUrl}?${darkParams.toString()}`;
+
+			const lightParams = new URLSearchParams(currentUrl.search);
+			lightParams.set('theme', lightTheme);
+			const lightUrl = `${baseUrl}?${lightParams.toString()}`;
+
+			const standaloneParams = new URLSearchParams(currentUrl.search);
+			standaloneParams.set('standalone', 'true');
+			const standaloneUrl = `${baseUrl}?${standaloneParams.toString()}`;
+
+			return `<a href="${standaloneUrl}" title="Click to view detailed data for each day!">
     <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="${url}${theme === 'catppuccin' ? '_' : '&theme='}dark">
-        <img alt="Hackatime activity heatmap" src="${url}${theme === 'catppuccin' ? '_' : '&theme='}light">
+        <source media="(prefers-color-scheme: dark)" srcset="${darkUrl}">
+        <img alt="Hackatime activity heatmap" src="${lightUrl}">
     </picture>
 </a>`;
 		} else {
