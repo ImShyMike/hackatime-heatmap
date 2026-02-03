@@ -1,7 +1,7 @@
 [package]
 name = "hackatime-heatmap"
 description = "Easy to set up Hackatime coding activity heatmap for your profile!"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 license = "AGPL-3.0-only"
 readme = "./README.md"

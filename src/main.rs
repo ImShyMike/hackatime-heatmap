@@ -524,11 +524,11 @@ async fn main() {
     if metrics_enabled {
         let prometheus_builder = metrics_exporter_prometheus::PrometheusBuilder::new();
         prometheus_builder
-            .with_http_listener(([0, 0, 0, 0], 9090))
+            .with_http_listener(([0, 0, 0, 0], 9292))
             .install()
             .expect("Failed to install Prometheus exporter");
 
-        tracing::info!("Prometheus metrics available at http://localhost:9090/metrics");
+        tracing::info!("Prometheus metrics available at http://localhost:9292/metrics");
     }
 
     let state = AppState {
