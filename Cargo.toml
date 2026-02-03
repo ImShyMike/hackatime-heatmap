@@ -4,7 +4,7 @@ description = "Easy to set up Hackatime coding activity heatmap for your profile
 version = "0.2.0"
 edition = "2024"
 license = "AGPL-3.0-only"
-readme = "../README.md"
+readme = "./README.md"
 homepage = "https://hackatime-heatmap.shymike.dev"
 repository = "https://github.com/ImShyMike/hackatime-heatmap"
 
