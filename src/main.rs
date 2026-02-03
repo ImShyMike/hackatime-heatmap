@@ -17,10 +17,12 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::CorsLayer;
+
+use metrics::{counter, histogram};
 
 use serde::Deserialize;
 
@@ -115,23 +117,29 @@ async fn fetch_user_spans(
     cache: &Cache<String, RequestData>,
 ) -> Result<Vec<Span>, String> {
     if let Some(cached) = cache.get(id) {
+        counter!("cache_hits_total", "cache" => "request").increment(1);
         return Ok(cached.spans.clone());
     }
+    counter!("cache_misses_total", "cache" => "request").increment(1);
 
+    let fetch_start = Instant::now();
     let url = format!(
         "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
         id
     );
     let resp = reqwest::get(&url).await.map_err(|err| {
-        eprintln!("Error fetching data: {:?}", err);
+        tracing::error!("Error fetching data: {:?}", err);
+        counter!("upstream_errors_total", "type" => "fetch").increment(1);
         "Failed to fetch data".to_string()
     })?;
 
     let json_resp = resp.json::<RequestData>().await.map_err(|err| {
-        eprintln!("Error parsing JSON: {:?}", err);
+        tracing::error!("Error parsing JSON: {:?}", err);
+        counter!("upstream_errors_total", "type" => "parse").increment(1);
         "Failed to parse response".to_string()
     })?;
 
+    histogram!("upstream_request_duration_seconds").record(fetch_start.elapsed().as_secs_f64());
     cache.insert(id.to_string(), json_resp.clone());
     Ok(json_resp.spans)
 }
@@ -366,26 +374,42 @@ async fn make_heatmap_svg(
     Query(params): Query<SvgParams>,
     OriginalUri(uri): OriginalUri,
 ) -> Response {
-    let current_time = chrono::Utc::now().timestamp();
-    println!("{} - {}", current_time, uri);
+    let request_start = Instant::now();
+    counter!("http_requests_total").increment(1);
+
+    tracing::info!("Request: {}", uri);
+
+    let id = match &params.id {
+        Some(id) => id.clone(),
+        None => {
+            counter!("http_requests_errors_total", "error" => "missing_id").increment(1);
+            histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response();
+        }
+    };
+
+    counter!("user_requests_total", "user_id" => id.clone()).increment(1);
 
     if let Some(response) = state.response_cache.get(&params) {
+        counter!("cache_hits_total", "cache" => "response").increment(1);
         let content_type = if params.standalone {
             "text/html"
         } else {
             "image/svg+xml"
         };
+        histogram!("http_request_duration_seconds", "status" => "200").record(request_start.elapsed().as_secs_f64());
         return (StatusCode::OK, build_headers(content_type), response).into_response();
     }
 
-    let id = match &params.id {
-        Some(id) => id.clone(),
-        None => return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response(),
-    };
+    counter!("cache_misses_total", "cache" => "response").increment(1);
 
     let ranges = match validate_ranges(&params.ranges) {
         Ok(r) => r,
-        Err(err) => return (StatusCode::BAD_REQUEST, err).into_response(),
+        Err(err) => {
+            counter!("http_requests_errors_total", "error" => "invalid_ranges").increment(1);
+            histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::BAD_REQUEST, err).into_response();
+        }
     };
 
     let content_type = if params.standalone {
@@ -397,7 +421,9 @@ async fn make_heatmap_svg(
     let tz: Tz = match params.timezone.parse() {
         Ok(tz) => tz,
         Err(_) => {
-            eprintln!("Unsupported timezone: {}", params.timezone);
+            tracing::warn!("Unsupported timezone: {}", params.timezone);
+            counter!("http_requests_errors_total", "error" => "invalid_timezone").increment(1);
+            histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, "Unsupported timezone".to_string()).into_response();
         }
     };
@@ -415,6 +441,8 @@ async fn make_heatmap_svg(
                 match year_str.parse::<i32>() {
                     Ok(y) => y,
                     Err(_) => {
+                        counter!("http_requests_errors_total", "error" => "invalid_year").increment(1);
+                        histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
                         return (StatusCode::BAD_REQUEST, "Invalid year parameter").into_response();
                     }
                 }
@@ -431,20 +459,28 @@ async fn make_heatmap_svg(
 
     let spans = match fetch_user_spans(&id, &state.request_cache).await {
         Ok(s) => s,
-        Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response(),
+        Err(err) => {
+            counter!("http_requests_errors_total", "error" => "upstream_failure").increment(1);
+            histogram!("http_request_duration_seconds", "status" => "500").record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+        }
     };
 
     let start_ts = match create_timezone_timestamp(&tz, &start_date, 0, 0, 0) {
         Ok(ts) => ts,
         Err(err) => {
-            eprintln!("Invalid start date: {}", err);
+            tracing::error!("Invalid start date: {}", err);
+            counter!("http_requests_errors_total", "error" => "invalid_start_date").increment(1);
+            histogram!("http_request_duration_seconds", "status" => "500").record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
     let end_ts = match create_timezone_timestamp(&tz, &end_date, 23, 59, 59) {
         Ok(ts) => ts,
         Err(err) => {
-            eprintln!("Invalid end date: {}", err);
+            tracing::error!("Invalid end date: {}", err);
+            counter!("http_requests_errors_total", "error" => "invalid_end_date").increment(1);
+            histogram!("http_request_duration_seconds", "status" => "500").record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
@@ -463,13 +499,27 @@ async fn make_heatmap_svg(
 
     state.response_cache.insert(params, svg_buf.clone());
 
+    histogram!("http_request_duration_seconds", "status" => "200").record(request_start.elapsed().as_secs_f64());
     (StatusCode::OK, build_headers(content_type), svg_buf).into_response()
 }
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
     tracing_subscriber::fmt::init();
+
+    let metrics_enabled = std::env::var("METRICS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if metrics_enabled {
+        let prometheus_builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+        prometheus_builder
+            .with_http_listener(([0, 0, 0, 0], 9090))
+            .install()
+            .expect("Failed to install Prometheus exporter");
+
+        tracing::info!("Prometheus metrics available at http://localhost:9090/metrics");
+    }
 
     let state = AppState {
         response_cache: Cache::builder()
@@ -482,7 +532,6 @@ async fn main() {
             .build(),
     };
 
-    // Build application with a route
     let app = Router::new()
         .route("/", get(make_heatmap_svg))
         .layer(CompressionLayer::new().gzip(true))
@@ -496,16 +545,15 @@ async fn main() {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    // Run app with hyper, listening globally on port 8282
     let listener = match tokio::net::TcpListener::bind("0.0.0.0:8282").await {
         Ok(listener) => listener,
         Err(e) => {
-            eprintln!("Failed to bind to port 8282: {}", e);
+            tracing::error!("Failed to bind to port 8282: {}", e);
             return;
         }
     };
-    println!("Listening on http://localhost:8282");
+    tracing::info!("Listening on http://localhost:8282");
     if let Err(e) = axum::serve(listener, app).await {
-        eprintln!("Server error: {}", e);
+        tracing::error!("Server error: {}", e);
     }
 }
