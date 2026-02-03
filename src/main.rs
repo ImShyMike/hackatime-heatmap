@@ -383,7 +383,8 @@ async fn make_heatmap_svg(
         Some(id) => id.clone(),
         None => {
             counter!("http_requests_errors_total", "error" => "missing_id").increment(1);
-            histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
+            histogram!("http_request_duration_seconds", "status" => "400")
+                .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response();
         }
     };
@@ -397,7 +398,8 @@ async fn make_heatmap_svg(
         } else {
             "image/svg+xml"
         };
-        histogram!("http_request_duration_seconds", "status" => "200").record(request_start.elapsed().as_secs_f64());
+        histogram!("http_request_duration_seconds", "status" => "200")
+            .record(request_start.elapsed().as_secs_f64());
         return (StatusCode::OK, build_headers(content_type), response).into_response();
     }
 
@@ -407,7 +409,8 @@ async fn make_heatmap_svg(
         Ok(r) => r,
         Err(err) => {
             counter!("http_requests_errors_total", "error" => "invalid_ranges").increment(1);
-            histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
+            histogram!("http_request_duration_seconds", "status" => "400")
+                .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, err).into_response();
         }
     };
@@ -423,7 +426,8 @@ async fn make_heatmap_svg(
         Err(_) => {
             tracing::warn!("Unsupported timezone: {}", params.timezone);
             counter!("http_requests_errors_total", "error" => "invalid_timezone").increment(1);
-            histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
+            histogram!("http_request_duration_seconds", "status" => "400")
+                .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, "Unsupported timezone".to_string()).into_response();
         }
     };
@@ -441,8 +445,10 @@ async fn make_heatmap_svg(
                 match year_str.parse::<i32>() {
                     Ok(y) => y,
                     Err(_) => {
-                        counter!("http_requests_errors_total", "error" => "invalid_year").increment(1);
-                        histogram!("http_request_duration_seconds", "status" => "400").record(request_start.elapsed().as_secs_f64());
+                        counter!("http_requests_errors_total", "error" => "invalid_year")
+                            .increment(1);
+                        histogram!("http_request_duration_seconds", "status" => "400")
+                            .record(request_start.elapsed().as_secs_f64());
                         return (StatusCode::BAD_REQUEST, "Invalid year parameter").into_response();
                     }
                 }
@@ -461,7 +467,8 @@ async fn make_heatmap_svg(
         Ok(s) => s,
         Err(err) => {
             counter!("http_requests_errors_total", "error" => "upstream_failure").increment(1);
-            histogram!("http_request_duration_seconds", "status" => "500").record(request_start.elapsed().as_secs_f64());
+            histogram!("http_request_duration_seconds", "status" => "500")
+                .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
@@ -471,7 +478,8 @@ async fn make_heatmap_svg(
         Err(err) => {
             tracing::error!("Invalid start date: {}", err);
             counter!("http_requests_errors_total", "error" => "invalid_start_date").increment(1);
-            histogram!("http_request_duration_seconds", "status" => "500").record(request_start.elapsed().as_secs_f64());
+            histogram!("http_request_duration_seconds", "status" => "500")
+                .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
@@ -480,7 +488,8 @@ async fn make_heatmap_svg(
         Err(err) => {
             tracing::error!("Invalid end date: {}", err);
             counter!("http_requests_errors_total", "error" => "invalid_end_date").increment(1);
-            histogram!("http_request_duration_seconds", "status" => "500").record(request_start.elapsed().as_secs_f64());
+            histogram!("http_request_duration_seconds", "status" => "500")
+                .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
@@ -499,7 +508,8 @@ async fn make_heatmap_svg(
 
     state.response_cache.insert(params, svg_buf.clone());
 
-    histogram!("http_request_duration_seconds", "status" => "200").record(request_start.elapsed().as_secs_f64());
+    histogram!("http_request_duration_seconds", "status" => "200")
+        .record(request_start.elapsed().as_secs_f64());
     (StatusCode::OK, build_headers(content_type), svg_buf).into_response()
 }
 
