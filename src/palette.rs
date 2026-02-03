@@ -1,11 +1,11 @@
 pub type Color = (u8, u8, u8);
 
-pub struct Pallete {
+pub struct Palette {
     name: &'static str,
     colors: [Color; 5],
 }
 
-impl Pallete {
+impl Palette {
     fn get_color(&self, level: usize) -> Color {
         self.colors[level]
     }
@@ -29,15 +29,15 @@ impl Pallete {
     }
 }
 
-pub fn get_pallete<'a>(palletes: &'a [Pallete], name: &String) -> &'a Pallete {
+pub fn get_palette<'a>(palletes: &'a [Palette], name: &String) -> &'a Palette {
     palletes
         .iter()
         .find(|p| p.name == name)
         .unwrap_or(&PALETTES[0]) // default to dark
 }
 
-pub const PALETTES: &[Pallete] = &[
-    Pallete {
+pub const PALETTES: &[Palette] = &[
+    Palette {
         name: "dark", // Github Dark
         colors: [
             (22, 27, 34),    // level 0 (no activity)
@@ -47,7 +47,7 @@ pub const PALETTES: &[Pallete] = &[
             (112, 201, 133), // level 4 (most activity)
         ],
     },
-    Pallete {
+    Palette {
         name: "light", // Github Light
         colors: [
             (235, 237, 240), // level 0 (no activity)
@@ -57,7 +57,7 @@ pub const PALETTES: &[Pallete] = &[
             (33, 110, 57),   // level 4 (most activity)
         ],
     },
-    Pallete {
+    Palette {
         name: "catppuccin_light", // Catppuccin Latte
         colors: [
             (204, 208, 218), // level 0 (no activity)
@@ -67,7 +67,7 @@ pub const PALETTES: &[Pallete] = &[
             (210, 15, 57),   // level 4 (most activity)
         ],
     },
-    Pallete {
+    Palette {
         name: "catppuccin_dark", // Catppuccin Mocha
         colors: [
             (49, 50, 68),    // level 0 (no activity)

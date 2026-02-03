@@ -1,4 +1,5 @@
-mod pallete;
+mod palette;
+mod time;
 mod utils;
 
 use axum::Router;
@@ -7,7 +8,6 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
 
 use tower_http::compression::CompressionLayer;
@@ -28,8 +28,9 @@ use svg::node::element::{Rectangle, Title};
 
 use moka::sync::Cache;
 
-use crate::pallete::{PALETTES, get_pallete};
-use crate::utils::{build_headers, human_time};
+use crate::palette::{PALETTES, get_palette};
+use crate::time::{create_timezone_timestamp, generate_date_range, process_span_into_buckets};
+use crate::utils::{build_headers, format_cell_label, validate_ranges};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
@@ -96,6 +97,111 @@ fn embed_page(svg: &str, standalone: bool) -> String {
     TEMPLATE.replace("{{SVG_CONTENT}}", svg)
 }
 
+async fn fetch_user_spans(
+    id: &str,
+    cache: &Cache<String, RequestData>,
+) -> Result<Vec<Span>, String> {
+    if let Some(cached) = cache.get(id) {
+        return Ok(cached.spans.clone());
+    }
+
+    let url = format!(
+        "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
+        id
+    );
+    let resp = reqwest::get(&url).await.map_err(|err| {
+        eprintln!("Error fetching data: {:?}", err);
+        "Failed to fetch data".to_string()
+    })?;
+
+    let json_resp = resp.json::<RequestData>().await.map_err(|err| {
+        eprintln!("Error parsing JSON: {:?}", err);
+        "Failed to parse response".to_string()
+    })?;
+
+    cache.insert(id.to_string(), json_resp.clone());
+    Ok(json_resp.spans)
+}
+
+fn create_svg_document(
+    all_dates: &[chrono::NaiveDate],
+    day_buckets: &HashMap<chrono::NaiveDate, u32>,
+    ranges: &[u32],
+    params: &SvgParams,
+) -> String {
+    let width = (DEFAULT_COLS * params.cell_size + params.padding * (DEFAULT_COLS + 1)) as u32;
+    let height = (DEFAULT_ROWS * params.cell_size + params.padding * (DEFAULT_ROWS + 1)) as u32;
+    let radius = (params.rounding.min(100) as f32 / 200.0) * params.cell_size as f32;
+
+    let mut document = Document::new()
+        .set("width", width)
+        .set("height", height)
+        .set("viewBox", format!("0 0 {} {}", width, height));
+
+    let mut values: Vec<u32> = all_dates
+        .iter()
+        .map(|date| *day_buckets.get(date).unwrap_or(&0))
+        .collect();
+    values.sort_unstable();
+    let max_duration = *values.last().unwrap_or(&0);
+
+    let selected_palette = get_palette(PALETTES, &params.theme);
+
+    for (i, date) in all_dates.iter().enumerate() {
+        let rect = create_cell_rectangle(
+            i,
+            date,
+            day_buckets,
+            max_duration,
+            ranges,
+            selected_palette,
+            params,
+            radius,
+        );
+        document = document.add(rect);
+    }
+
+    document.to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_cell_rectangle(
+    index: usize,
+    date: &chrono::NaiveDate,
+    day_buckets: &HashMap<chrono::NaiveDate, u32>,
+    max_duration: u32,
+    ranges: &[u32],
+    palette: &palette::Palette,
+    params: &SvgParams,
+    radius: f32,
+) -> Rectangle {
+    let seconds = *day_buckets.get(date).unwrap_or(&0);
+    let col = index / DEFAULT_ROWS;
+    let row = index % DEFAULT_ROWS;
+    let x = (col * params.cell_size + params.padding * (col + 1)) as i32;
+    let y = (row * params.cell_size + params.padding * (row + 1)) as i32;
+    let w = params.cell_size as i32;
+    let h = params.cell_size as i32;
+
+    let color = palette.calculate_color(seconds, max_duration, ranges);
+    let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
+
+    let label = format_cell_label(date, seconds);
+
+    let rect = Rectangle::new()
+        .set("title", label.clone())
+        .set("x", x)
+        .set("y", y)
+        .set("width", w)
+        .set("height", h)
+        .set("fill", color_str)
+        .set("rx", radius)
+        .set("ry", radius);
+
+    let title = Title::new(&label);
+    rect.add(title)
+}
+
 async fn make_heatmap_svg(
     State(state): State<AppState>,
     Query(params): Query<SvgParams>,
@@ -104,39 +210,24 @@ async fn make_heatmap_svg(
     let current_time = chrono::Utc::now().timestamp();
     println!("{} - {}", current_time, uri);
 
-    let cached_response = state.response_cache.get(&params);
+    if let Some(response) = state.response_cache.get(&params) {
+        let content_type = if params.standalone {
+            "text/html"
+        } else {
+            "image/svg+xml"
+        };
+        return (StatusCode::OK, build_headers(content_type), response).into_response();
+    }
 
     let id = match &params.id {
         Some(id) => id.clone(),
         None => return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response(),
     };
 
-    let ranges = params
-        .ranges
-        .split(',')
-        .filter_map(|s| s.trim().parse::<u32>().ok())
-        .collect::<Vec<u32>>();
-    if ranges.len() != 3 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid ranges parameter, must be three comma-separated integers".to_string(),
-        )
-            .into_response();
-    }
-    if !(ranges[0] > ranges[1] && ranges[1] > ranges[2] && ranges[2] > 0) {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid ranges parameter, must be three descending positive integers".to_string(),
-        )
-            .into_response();
-    }
-    if ranges[0] > 100 || ranges[1] > 100 || ranges[2] > 100 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid ranges parameter, values must be within 0 and 100".to_string(),
-        )
-            .into_response();
-    }
+    let ranges = match validate_ranges(&params.ranges) {
+        Ok(r) => r,
+        Err(err) => return (StatusCode::BAD_REQUEST, err).into_response(),
+    };
 
     let content_type = if params.standalone {
         "text/html"
@@ -144,11 +235,6 @@ async fn make_heatmap_svg(
         "image/svg+xml"
     };
 
-    if let Some(response) = cached_response {
-        return (StatusCode::OK, build_headers(content_type), response).into_response();
-    }
-
-    // Parse timezone string
     let tz: Tz = match params.timezone.parse() {
         Ok(tz) => tz,
         Err(_) => {
@@ -156,221 +242,43 @@ async fn make_heatmap_svg(
             return (StatusCode::BAD_REQUEST, "Unsupported timezone".to_string()).into_response();
         }
     };
-    // Get now in user's timezone
+
     let now_utc = chrono::Utc::now();
     let now_local = now_utc.with_timezone(&tz);
     let today = now_local.date_naive();
     let one_year_ago = (now_local - chrono::Duration::days(365)).date_naive();
+
+    let spans = match fetch_user_spans(&id, &state.request_cache).await {
+        Ok(s) => s,
+        Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response(),
+    };
+
+    let one_year_ago_ts = match create_timezone_timestamp(&tz, &one_year_ago, 0, 0, 0) {
+        Ok(ts) => ts,
+        Err(err) => {
+            eprintln!("Invalid date for one year ago: {}", err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+        }
+    };
+    let today_end_ts = match create_timezone_timestamp(&tz, &today, 23, 59, 59) {
+        Ok(ts) => ts,
+        Err(err) => {
+            eprintln!("Invalid date for today: {}", err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+        }
+    };
+
     let mut day_buckets: HashMap<chrono::NaiveDate, u32> = HashMap::new();
-    let mut tooltips: Vec<String> = Vec::new();
+    for span in spans
+        .iter()
+        .filter(|span| span.end_time >= one_year_ago_ts && span.start_time <= today_end_ts)
     {
-        let cached_request = state.request_cache.get(&id);
-
-        let spans: Vec<Span>;
-        if let Some(request) = cached_request {
-            spans = request.spans.clone();
-        } else {
-            // Fetch data for the given id
-            let resp = reqwest::get(&format!(
-                "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
-                id
-            ))
-            .await;
-            let resp = match resp {
-                Ok(resp) => resp,
-                Err(err) => {
-                    eprintln!("Error fetching data: {:?}", err);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-                }
-            };
-
-            // Parse JSON response
-            let json_resp = resp.json::<RequestData>().await;
-            let json_resp = match json_resp {
-                Ok(json_resp) => json_resp,
-                Err(err) => {
-                    eprintln!("Error parsing JSON: {:?}", err);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-                }
-            };
-
-            spans = json_resp.spans;
-
-            state.request_cache.insert(
-                id,
-                RequestData {
-                    spans: spans.clone(),
-                },
-            );
-        }
-
-        // Calculate timestamps for one year ago and today in user's timezone
-        let one_year_ago_ts = match tz
-            .with_ymd_and_hms(
-                one_year_ago.year(),
-                one_year_ago.month(),
-                one_year_ago.day(),
-                0,
-                0,
-                0,
-            )
-            .single()
-        {
-            Some(dt) => dt.timestamp() as f64,
-            None => {
-                eprintln!("Invalid date for one year ago");
-                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-            }
-        };
-        let today_end_ts = match tz
-            .with_ymd_and_hms(today.year(), today.month(), today.day(), 23, 59, 59)
-            .single()
-        {
-            Some(dt) => dt.timestamp() as f64,
-            None => {
-                eprintln!("Invalid date for today");
-                return (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()).into_response();
-            }
-        };
-        for span in spans
-            .into_iter()
-            .filter(|span| span.end_time >= one_year_ago_ts && span.start_time <= today_end_ts)
-        {
-            // Convert span start and end to user's timezone
-            let start_dt_utc =
-                match chrono::DateTime::<chrono::Utc>::from_timestamp(span.start_time as i64, 0) {
-                    Some(dt) => dt,
-                    None => {
-                        eprintln!("Invalid start timestamp: {}", span.start_time);
-                        continue; // Skip invalid spans
-                    }
-                };
-            let end_dt_utc =
-                match chrono::DateTime::<chrono::Utc>::from_timestamp(span.end_time as i64, 0) {
-                    Some(dt) => dt,
-                    None => {
-                        eprintln!("Invalid end timestamp: {}", span.end_time);
-                        continue; // Skip invalid spans
-                    }
-                };
-            let start_local = start_dt_utc.with_timezone(&tz);
-            let end_local = end_dt_utc.with_timezone(&tz);
-            let start_date = start_local.date_naive();
-            let end_date = end_local.date_naive();
-            if start_date == end_date {
-                // If the span is within a single day, just add the duration (rounded to seconds)
-                let entry = day_buckets.entry(start_date).or_insert(0);
-                *entry += span.duration.round() as u32;
-            } else {
-                // If the span crosses days, split duration by actual seconds per day in user's timezone
-                let mut current = start_local;
-                let mut remaining = span.duration;
-                while current.date_naive() < end_date {
-                    let next_midnight = match tz
-                        .with_ymd_and_hms(
-                            current.year(),
-                            current.month(),
-                            current.day(),
-                            23,
-                            59,
-                            59,
-                        )
-                        .single()
-                    {
-                        Some(dt) => dt,
-                        None => {
-                            eprintln!("Invalid next midnight date");
-                            break; // Exit the loop on error
-                        }
-                    };
-                    let seconds = (next_midnight.timestamp() - current.timestamp() + 1) as f64;
-                    let entry = day_buckets.entry(current.date_naive()).or_insert(0);
-                    let to_add = seconds.min(remaining).round() as u32;
-                    *entry += to_add;
-                    remaining -= seconds;
-                    current = next_midnight + chrono::Duration::seconds(1);
-                }
-                // Add the rest to the last day
-                let entry = day_buckets.entry(end_date).or_insert(0);
-                *entry += remaining.round() as u32;
-            }
-        }
+        process_span_into_buckets(span, &tz, &mut day_buckets);
     }
 
-    let svg_buf: String;
-    {
-        // Create SVG document
-        let width = (DEFAULT_COLS * params.cell_size + params.padding * (DEFAULT_COLS + 1)) as u32;
-        let height = (DEFAULT_ROWS * params.cell_size + params.padding * (DEFAULT_ROWS + 1)) as u32;
-        let radius = (params.rounding.min(100) as f32 / 200.0) * params.cell_size as f32;
-        let mut document = Document::new()
-            .set("width", width)
-            .set("height", height)
-            .set("viewBox", format!("0 0 {} {}", width, height));
-
-        // Generate all dates from one_year_ago to today
-        let mut all_dates = Vec::new();
-        let mut current = one_year_ago;
-        while current <= today {
-            all_dates.push(current);
-            current += chrono::Duration::days(1);
-        }
-
-        // Collect all values and make a color scale function
-        let mut values: Vec<u32> = all_dates
-            .iter()
-            .map(|date| *day_buckets.get(date).unwrap_or(&0))
-            .collect();
-        values.sort_unstable();
-        let max_duration = *values.last().unwrap_or(&0);
-
-        // Select palette based on theme param (default: dark)
-        let selected_palette = get_pallete(PALETTES, &params.theme);
-
-        for (i, date) in all_dates.iter().enumerate() {
-            let seconds = *day_buckets.get(date).unwrap_or(&0);
-            let col = i / DEFAULT_ROWS;
-            let row = i % DEFAULT_ROWS;
-            let x = (col * params.cell_size + params.padding * (col + 1)) as i32;
-            let y = (row * params.cell_size + params.padding * (row + 1)) as i32;
-            let w = params.cell_size as i32;
-            let h = params.cell_size as i32;
-            let color = selected_palette.calculate_color(seconds, max_duration, &ranges);
-            let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
-
-            // Add tooltip
-            let date_str = date.format("%B %-d").to_string();
-            let day = date.day();
-            let suffix = match day % 10 {
-                1 if day != 11 => "st",
-                2 if day != 12 => "nd",
-                3 if day != 13 => "rd",
-                _ => "th",
-            };
-            let label = if seconds > 0 {
-                format!("{} on {}{}", human_time(seconds), date_str, suffix)
-            } else {
-                format!("No activity on {}{}", date_str, suffix)
-            };
-            tooltips.push(label.clone());
-
-            let rect = Rectangle::new()
-                .set("title", label.clone())
-                .set("x", x)
-                .set("y", y)
-                .set("width", w)
-                .set("height", h)
-                .set("fill", color_str)
-                .set("rx", radius)
-                .set("ry", radius);
-
-            let title = Title::new(&label);
-            let rect_with_title = rect.add(title);
-            document = document.add(rect_with_title);
-        }
-
-        svg_buf = embed_page(&document.to_string(), params.standalone);
-    }
+    let all_dates = generate_date_range(one_year_ago, today);
+    let svg_content = create_svg_document(&all_dates, &day_buckets, &ranges, &params);
+    let svg_buf = embed_page(&svg_content, params.standalone);
 
     state.response_cache.insert(params, svg_buf.clone());
 
