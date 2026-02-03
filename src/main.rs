@@ -10,6 +10,11 @@ use axum::routing::get;
 use chrono::{Datelike, TimeZone};
 use chrono_tz::Tz;
 
+use tower_http::compression::CompressionLayer;
+use tower_http::decompression::DecompressionLayer;
+use tower_http::normalize_path::NormalizePathLayer;
+use tower_http::timeout::TimeoutLayer;
+
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -33,6 +38,9 @@ const MAX_RESPONSE_CACHE_ENTRIES: u64 = 200;
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const MAX_REQUEST_CACHE_ENTRIES: u64 = 25;
 const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+const TEMPLATE: &str = include_str!("template.html");
 
 #[derive(Clone)]
 struct AppState {
@@ -85,81 +93,7 @@ fn embed_page(svg: &str, standalone: bool) -> String {
         return svg.to_string();
     }
 
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hackatime Heatmap</title>
-    <style>
-        :root {{
-            --bg-color: #ffffff;
-            --text-color: #24292f;
-        }}
-        @media (prefers-color-scheme: dark) {{
-            :root {{
-                --bg-color: #0d1117;
-                --text-color: #c9d1d9;
-            }}
-        }}
-        body {{
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            min-height: 100vh;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
-            overflow: hidden;
-        }}
-        .container {{
-            text-align: center;
-            padding: 20px;
-        }}
-        .title {{
-            font-size: 2rem;
-            font-weight: 600;
-            margin-bottom: 24px;
-            color: var(--text-color);
-        }}
-        .heatmap-container {{
-            display: inline-block;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1 class="title">Hackatime Activity Heatmap</h1>
-        <p>Hover over each cell to see detailed data for that day!</p>
-        <div class="heatmap-container">
-            {}
-        </div>
-    </div>
-    <script>
-        const params = new URLSearchParams(window.location.search);
-        const currentTheme = params.get('theme') || 'auto';
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        
-        let preferredTheme;
-        if (currentTheme === 'auto') {{
-            preferredTheme = prefersDark ? 'dark' : 'light';
-        }} else if (currentTheme === 'catppuccin') {{
-            preferredTheme = prefersDark ? 'catppuccin_dark' : 'catppuccin_light';
-        }} else {{
-            preferredTheme = currentTheme;
-        }}
-        
-        if (currentTheme !== preferredTheme) {{
-            params.set('theme', preferredTheme);
-            window.location.search = params.toString();
-        }}
-    </script>
-</body>
-</html>"#,
-        svg
-    )
+    TEMPLATE.replace("{{SVG_CONTENT}}", svg)
 }
 
 async fn make_heatmap_svg(
@@ -462,6 +396,13 @@ async fn main() {
     // Build application with a route
     let app = Router::new()
         .route("/", get(make_heatmap_svg))
+        .layer(CompressionLayer::new().gzip(true))
+        .layer(DecompressionLayer::new().gzip(true))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            DEFAULT_REQUEST_TIMEOUT,
+        ))
+        .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(CatchPanicLayer::new())
         .layer(CorsLayer::permissive())
         .with_state(state);

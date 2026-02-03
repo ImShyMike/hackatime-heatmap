@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hackatime Heatmap</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #24292f;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #0d1117;
+                --text-color: #c9d1d9;
+            }
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+        .title {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-color);
+        }
+        .heatmap-container {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">Hackatime Activity Heatmap</h1>
+        <p>Hover over each cell to see detailed data for that day!</p>
+        <div class="heatmap-container">
+            {{SVG_CONTENT}}
+        </div>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const currentTheme = params.get('theme') || 'auto';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        let preferredTheme;
+        if (currentTheme === 'auto') {
+            preferredTheme = prefersDark ? 'dark' : 'light';
+        } else if (currentTheme === 'catppuccin') {
+            preferredTheme = prefersDark ? 'catppuccin_dark' : 'catppuccin_light';
+        } else {
+            preferredTheme = currentTheme;
+        }
+        
+        if (currentTheme !== preferredTheme) {
+            params.set('theme', preferredTheme);
+            window.location.search = params.toString();
+        }
+    </script>
+</body>
+</html>
