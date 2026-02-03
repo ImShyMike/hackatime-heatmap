@@ -139,7 +139,8 @@ async fn fetch_user_spans(
         "Failed to parse response".to_string()
     })?;
 
-    histogram!("heatmap_upstream_request_duration_seconds").record(fetch_start.elapsed().as_secs_f64());
+    histogram!("heatmap_upstream_request_duration_seconds")
+        .record(fetch_start.elapsed().as_secs_f64());
     cache.insert(id.to_string(), json_resp.clone());
     Ok(json_resp.spans)
 }
@@ -408,7 +409,8 @@ async fn make_heatmap_svg(
     let ranges = match validate_ranges(&params.ranges) {
         Ok(r) => r,
         Err(err) => {
-            counter!("heatmap_http_requests_errors_total", "error" => "invalid_ranges").increment(1);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_ranges")
+                .increment(1);
             histogram!("heatmap_http_request_duration_seconds", "status" => "400")
                 .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, err).into_response();
@@ -425,7 +427,8 @@ async fn make_heatmap_svg(
         Ok(tz) => tz,
         Err(_) => {
             tracing::warn!("Unsupported timezone: {}", params.timezone);
-            counter!("heatmap_http_requests_errors_total", "error" => "invalid_timezone").increment(1);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_timezone")
+                .increment(1);
             histogram!("heatmap_http_request_duration_seconds", "status" => "400")
                 .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, "Unsupported timezone".to_string()).into_response();
@@ -466,7 +469,8 @@ async fn make_heatmap_svg(
     let spans = match fetch_user_spans(&id, &state.request_cache).await {
         Ok(s) => s,
         Err(err) => {
-            counter!("heatmap_http_requests_errors_total", "error" => "upstream_failure").increment(1);
+            counter!("heatmap_http_requests_errors_total", "error" => "upstream_failure")
+                .increment(1);
             histogram!("heatmap_http_request_duration_seconds", "status" => "500")
                 .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
@@ -477,7 +481,8 @@ async fn make_heatmap_svg(
         Ok(ts) => ts,
         Err(err) => {
             tracing::error!("Invalid start date: {}", err);
-            counter!("heatmap_http_requests_errors_total", "error" => "invalid_start_date").increment(1);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_start_date")
+                .increment(1);
             histogram!("heatmap_http_request_duration_seconds", "status" => "500")
                 .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
@@ -487,7 +492,8 @@ async fn make_heatmap_svg(
         Ok(ts) => ts,
         Err(err) => {
             tracing::error!("Invalid end date: {}", err);
-            counter!("heatmap_http_requests_errors_total", "error" => "invalid_end_date").increment(1);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_end_date")
+                .increment(1);
             histogram!("heatmap_http_request_duration_seconds", "status" => "500")
                 .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
