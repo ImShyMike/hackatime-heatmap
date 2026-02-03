@@ -19,6 +19,9 @@
 		ranges: [70, 30, 10]
 	};
 
+	const baseUrl = import.meta.env.PROD ? 'https://heatmap.shymike.dev' : 'http://localhost:8282';
+	const decounceMs = 100;
+
 	let configMode: ConfigMode = $state('simple');
 	let mode: Mode = $state('theme-aware');
 	let id: string = $state('1');
@@ -28,7 +31,7 @@
 	let padding: number = $state(2);
 	let rounding: number = $state(50);
 	let ranges: Array<number> = $state([70, 30, 10]);
-	let rangesString: string = $state('70,30,10');
+	let rangesString: string = $derived(ranges.join(','));
 	let useAutoTimezone: boolean = $state(false);
 	let imageLoaded: boolean = $state(false);
 	let loadFailed: boolean = $state(false);
@@ -85,6 +88,28 @@
 	}
 
 	let url = $derived.by(() => {
+		const params = getUrlParams();
+
+		if (theme !== defaults.theme) {
+			params.set('theme', theme);
+		}
+
+		return `${baseUrl}?${params.toString()}`;
+	});
+
+	let previewUrl = $derived.by(() => {
+		if (mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')) {
+			const params = getUrlParams();
+
+			const dynamicTheme = theme === 'catppuccin' ? `catppuccin_${pageTheme}` : pageTheme;
+			params.set('theme', dynamicTheme);
+
+			return `${baseUrl}?${params.toString()}`;
+		}
+		return url;
+	});
+
+	function getUrlParams() {
 		const params = new URLSearchParams();
 
 		params.set('id', id);
@@ -111,12 +136,8 @@
 			params.set('ranges', rangesString);
 		}
 
-		if (theme !== defaults.theme) {
-			params.set('theme', theme);
-		}
-
-		return `https://heatmap.shymike.dev?${params.toString()}`;
-	});
+		return params;
+	}
 
 	$effect(() => {
 		if (mode === 'simple' && (theme === '' || theme === 'catppuccin')) {
@@ -133,13 +154,12 @@
 	});
 
 	$effect(() => {
-		rangesString = ranges.join(',');
-	});
-
-	$effect(() => {
+		$effect.tracking();
 		imageLoaded = false;
 		loadFailed = false;
-		url; // Trigger when URL changes
+		if (debouncedUrl) {
+			// Reset image states when debounced URL changes
+		}
 	});
 
 	function imageLoad() {
@@ -150,6 +170,27 @@
 		loadFailed = true;
 		console.error('Failed to load image:', e);
 	}
+
+	let debouncedUrl = $state('');
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		const currentUrl = previewUrl;
+
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+		}
+
+		debounceTimer = setTimeout(() => {
+			debouncedUrl = currentUrl;
+		}, decounceMs);
+		
+		return () => {
+			if (debounceTimer) {
+				clearTimeout(debounceTimer);
+			}
+		};
+	});
 
 	let generatedHtml = $derived.by(() => {
 		if (mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')) {
@@ -454,9 +495,9 @@
 						placeholder="e.g., 70,30,10"
 					/>
 					<div class="range-slider-container">
-						<RangeSlider 
-							bind:values={ranges} 
-							min={0} 
+						<RangeSlider
+							bind:values={ranges}
+							min={0}
 							max={100}
 							step={1}
 							pips
@@ -496,7 +537,7 @@
 				Preview:
 			</h2>
 			<div
-				class="relative rounded-lg sm:p-2 md:p-4 p-1 transition-all duration-500 ease-in-out"
+				class="relative rounded-lg p-1 transition-all duration-500 ease-in-out sm:p-2 md:p-4"
 				style:background-color={darkBackground
 					? 'var(--color-github-dark)'
 					: 'var(--color-github-light)'}
@@ -519,9 +560,7 @@
 					</div>
 				{/if}
 				<img
-					src="{url}{mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')
-						? (theme === 'catppuccin' ? '_' : '&theme=') + pageTheme
-						: ''}"
+					src={debouncedUrl}
 					alt="Error loading heatmap preview..."
 					onerror={imageError}
 					onload={imageLoad}

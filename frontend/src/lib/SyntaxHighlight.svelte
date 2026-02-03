@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Prism from 'prismjs';
 
 	import 'prismjs/components/prism-markup.js';
@@ -16,20 +15,8 @@
 	let codeElement: HTMLElement;
 	let isCopied = $state(false);
 
-	onMount(() => {
-		if (codeElement) {
-			Prism.highlightElement(codeElement);
-		}
-	});
-
-	$effect(() => {
-		if (codeElement && code) {
-			codeElement.innerHTML = Prism.highlight(
-				code,
-				Prism.languages[language] || Prism.languages.html,
-				language
-			);
-		}
+	let highlightedCode = $derived.by(() => {
+		return Prism.highlight(code, Prism.languages[language] || Prism.languages.html, language);
 	});
 
 	function handleClick() {
@@ -103,13 +90,13 @@
 		{/if}
 	</button>
 	<pre
-		class="overflow-x-auto rounded-md border border-overlay0 !bg-surface0/60 transition-all duration-300 ease-in-out dark:border-overlay0"><code
+		class="overflow-x-auto py-2 px-3 rounded-md border border-overlay0 !bg-surface0/60 transition-all duration-300 ease-in-out dark:border-overlay0"><code
 			bind:this={codeElement}
 			class="language-{language} !bg-transparent text-sm text-text dark:text-text"
 			onclick={handleClick}
 			aria-label="Code block"
 			role={readonly ? 'textbox' : undefined}
-			style="cursor: {readonly ? 'pointer' : 'default'}">{code}</code
+			style="cursor: {readonly ? 'pointer' : 'default'}">{@html highlightedCode}</code
 		></pre>
 </div>
 
