@@ -21,5 +21,5 @@ serde = { version = "1.0.228", default-features = false }
 svg = { version = "0.18.0", default-features = false }
 tokio = { version = "1.49.0", features = ["rt-multi-thread"], default-features = false }
 tower = { version = "0.5.3", default-features = false }
-tower-http = { version = "0.6.2", features = ["catch-panic"], default-features = false }
+tower-http = { version = "0.6.2", features = ["catch-panic", "cors"], default-features = false }
 tracing-subscriber = { version = "0.3.22", features = ["fmt"], default-features = false }

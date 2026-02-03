@@ -10,7 +10,7 @@ impl Pallete {
         self.colors[level]
     }
 
-    pub fn calculate_color(&self, value: u32, max: u32, ranges: &Vec<u32>) -> Color {
+    pub fn calculate_color(&self, value: u32, max: u32, ranges: &[u32]) -> Color {
         let level = if value < 60 {
             0
         } else {

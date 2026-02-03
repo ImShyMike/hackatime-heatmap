@@ -1,8 +1,9 @@
 mod pallete;
+mod utils;
 
 use axum::Router;
 use axum::extract::{OriginalUri, Query, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
@@ -13,6 +14,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::cors::CorsLayer;
 
 use serde::Deserialize;
 
@@ -22,6 +24,7 @@ use svg::node::element::{Rectangle, Title};
 use moka::sync::Cache;
 
 use crate::pallete::{PALETTES, get_pallete};
+use crate::utils::{build_headers, human_time};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
@@ -65,16 +68,6 @@ impl Default for SvgParams {
     }
 }
 
-fn build_headers(content_type: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_str(content_type).unwrap(),
-    );
-    headers.insert(header::CACHE_CONTROL, CACHE_HEADER);
-    headers
-}
-
 #[derive(Debug, Deserialize, Clone)]
 struct RequestData {
     spans: Vec<Span>,
@@ -85,27 +78,6 @@ struct Span {
     start_time: f64,
     end_time: f64,
     duration: f64,
-}
-
-fn human_time(seconds: u32) -> String {
-    let hours = seconds / 3600;
-    let minutes = (seconds % 3600) / 60;
-    let seconds = seconds % 60;
-    if hours > 0 {
-        if minutes == 0 {
-            format!("{}h", hours)
-        } else {
-            format!("{}h {}m", hours, minutes)
-        }
-    } else if minutes > 0 {
-        if seconds == 0 {
-            format!("{}m", minutes)
-        } else {
-            format!("{}m {}s", minutes, seconds)
-        }
-    } else {
-        "<1m".to_string()
-    }
 }
 
 fn embed_page(svg: &str, standalone: bool) -> String {
@@ -491,6 +463,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(make_heatmap_svg))
         .layer(CatchPanicLayer::new())
+        .layer(CorsLayer::permissive())
         .with_state(state);
 
     // Run app with hyper, listening globally on port 8282
