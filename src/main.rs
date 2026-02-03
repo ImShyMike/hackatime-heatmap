@@ -149,7 +149,7 @@ fn create_svg_document(
 
     let grid_width = DEFAULT_COLS * (cell_size + padding);
     let grid_height = DEFAULT_ROWS * (cell_size + padding);
-    let total_width = weekday_width + grid_width;
+    let total_width = weekday_width + grid_width + if show_labels { 3 } else { 0 };
     let total_height = month_height + grid_height + legend_height;
 
     let mut document = Document::new()
