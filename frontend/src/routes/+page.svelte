@@ -9,6 +9,8 @@
 	type Mode = 'simple' | 'theme-aware';
 	type ConfigMode = 'simple' | 'advanced';
 
+	type YearMode = '' | 'current' | 'custom';
+
 	const defaults = {
 		mode: 'theme-aware' as Mode,
 		theme: '' as Theme,
@@ -17,7 +19,9 @@
 		padding: 2,
 		rounding: 50,
 		labels: false,
-		ranges: [70, 30, 10]
+		ranges: [70, 30, 10],
+		yearMode: '' as YearMode,
+		customYear: new Date().getFullYear()
 	};
 
 	const baseUrl = import.meta.env.PROD ? 'https://heatmap.shymike.dev' : 'http://localhost:8282';
@@ -34,6 +38,8 @@
 	let labels: boolean = $state(false);
 	let ranges: Array<number> = $state([70, 30, 10]);
 	let rangesString: string = $derived(ranges.join(','));
+	let yearMode: YearMode = $state('');
+	let customYear: number = $state(new Date().getFullYear());
 	let useAutoTimezone: boolean = $state(false);
 	let imageLoaded: boolean = $state(false);
 	let loadFailed: boolean = $state(false);
@@ -140,6 +146,12 @@
 
 		if (rangesString !== defaults.ranges.join(',')) {
 			params.set('ranges', rangesString);
+		}
+
+		if (yearMode === 'current') {
+			params.set('year', 'current');
+		} else if (yearMode === 'custom') {
+			params.set('year', customYear.toString());
 		}
 
 		return params;
@@ -405,6 +417,35 @@
 				</select>
 			</div>
 
+			<!-- Year -->
+			<div class="space-y-2">
+				<label
+					for="year-mode"
+					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+				>
+					Date Range:
+				</label>
+				<select
+					id="year-mode"
+					bind:value={yearMode}
+					class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+				>
+					<option value="">Last 365 days</option>
+					<option value="current">Current year</option>
+					<option value="custom">Specific year</option>
+				</select>
+				{#if yearMode === 'custom'}
+					<input
+						id="custom-year"
+						type="number"
+						bind:value={customYear}
+						min="2000"
+						max="2100"
+						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+					/>
+				{/if}
+			</div>
+
 			<!-- Advanced Options -->
 			{#if configMode === 'advanced'}
 				<!-- Timezone -->
@@ -561,7 +602,7 @@
 				Preview:
 			</h2>
 			<div
-				class="relative rounded-lg p-1 transition-all duration-500 ease-in-out sm:p-2 md:p-4 flex items-center justify-center"
+				class="relative flex items-center justify-center rounded-lg p-1 transition-all duration-500 ease-in-out sm:p-2 md:p-4"
 				style:background-color={darkBackground
 					? 'var(--color-github-dark)'
 					: 'var(--color-github-light)'}
@@ -583,15 +624,22 @@
 						<p class="text-red">Failed to load heatmap. Please check your configuration.</p>
 					</div>
 				{/if}
-				<img
-					src={debouncedUrl}
-					alt="Error loading heatmap preview..."
-					onerror={imageError}
-					onload={imageLoad}
-					class="h-auto max-w-full text-red transition-opacity duration-300 ease-in-out {imageLoaded
-						? 'opacity-100'
-						: 'opacity-0'}"
-				/>
+				<a
+					href="{previewUrl}&standalone=true"
+					title="Click to view detailed data for each day!"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					<img
+						src={debouncedUrl}
+						alt="Error loading heatmap preview..."
+						onerror={imageError}
+						onload={imageLoad}
+						class="h-auto max-w-full text-red transition-opacity duration-300 ease-in-out {imageLoaded
+							? 'opacity-100'
+							: 'opacity-0'}"
+					/>
+				</a>
 			</div>
 		</div>
 	</div>

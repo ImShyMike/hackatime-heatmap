@@ -8,6 +8,7 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
+use chrono::Datelike;
 use chrono_tz::Tz;
 
 use tower_http::compression::CompressionLayer;
@@ -69,6 +70,7 @@ struct SvgParams {
     ranges: String,
     standalone: bool,
     labels: bool,
+    year: Option<String>,
 }
 
 impl Default for SvgParams {
@@ -83,6 +85,7 @@ impl Default for SvgParams {
             ranges: "70,30,10".to_string(),
             standalone: false,
             labels: false,
+            year: None,
         }
     }
 }
@@ -402,24 +405,46 @@ async fn make_heatmap_svg(
     let now_utc = chrono::Utc::now();
     let now_local = now_utc.with_timezone(&tz);
     let today = now_local.date_naive();
-    let one_year_ago = (now_local - chrono::Duration::days(365)).date_naive();
+    let current_year = today.year();
+
+    let (start_date, end_date) = match &params.year {
+        Some(year_str) => {
+            let year = if year_str.eq_ignore_ascii_case("current") {
+                current_year
+            } else {
+                match year_str.parse::<i32>() {
+                    Ok(y) => y,
+                    Err(_) => {
+                        return (StatusCode::BAD_REQUEST, "Invalid year parameter").into_response();
+                    }
+                }
+            };
+            let jan_1 = chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap();
+            let dec_31 = chrono::NaiveDate::from_ymd_opt(year, 12, 31).unwrap();
+            (jan_1, dec_31)
+        }
+        None => {
+            let one_year_ago = (now_local - chrono::Duration::days(365)).date_naive();
+            (one_year_ago, today)
+        }
+    };
 
     let spans = match fetch_user_spans(&id, &state.request_cache).await {
         Ok(s) => s,
         Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response(),
     };
 
-    let one_year_ago_ts = match create_timezone_timestamp(&tz, &one_year_ago, 0, 0, 0) {
+    let start_ts = match create_timezone_timestamp(&tz, &start_date, 0, 0, 0) {
         Ok(ts) => ts,
         Err(err) => {
-            eprintln!("Invalid date for one year ago: {}", err);
+            eprintln!("Invalid start date: {}", err);
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
-    let today_end_ts = match create_timezone_timestamp(&tz, &today, 23, 59, 59) {
+    let end_ts = match create_timezone_timestamp(&tz, &end_date, 23, 59, 59) {
         Ok(ts) => ts,
         Err(err) => {
-            eprintln!("Invalid date for today: {}", err);
+            eprintln!("Invalid end date: {}", err);
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
@@ -427,12 +452,12 @@ async fn make_heatmap_svg(
     let mut day_buckets: HashMap<chrono::NaiveDate, u32> = HashMap::new();
     for span in spans
         .iter()
-        .filter(|span| span.end_time >= one_year_ago_ts && span.start_time <= today_end_ts)
+        .filter(|span| span.end_time >= start_ts && span.start_time <= end_ts)
     {
         process_span_into_buckets(span, &tz, &mut day_buckets);
     }
 
-    let all_dates = generate_date_range(one_year_ago, today);
+    let all_dates = generate_date_range(start_date, end_date);
     let svg_content = create_svg_document(&all_dates, &day_buckets, &ranges, &params);
     let svg_buf = embed_page(&svg_content, params.standalone);
 

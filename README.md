@@ -48,6 +48,7 @@ All the parameters that can be adjusted are:
 - [Padding](#padding)
 - [Rounding](#rounding)
 - [Ranges](#ranges)
+- [Year](#year)
 - [Show Labels](#show-labels)
 - [Standalone](#standalone)
 
@@ -128,6 +129,17 @@ The percentage ranges for each color as a 3 item string list. Defaults to `70,30
     ![Hackatime heatmap with ranges 80,50,20](https://heatmap.shymike.dev?id=1&ranges=80,50,20)
 - [https://heatmap.shymike.dev?id=1&ranges=75,50,25](https://heatmap.shymike.dev?id=1&ranges=75,50,25)
     ![Hackatime heatmap with ranges 75,50,25](https://heatmap.shymike.dev?id=1&ranges=75,50,25)
+
+### Year
+
+Display data for a specific calendar year (Jan 1 - Dec 31) instead of the last 365 days. Use `current` for the current year, or specify a year number. If not set, shows the last 365 days.
+
+- [https://heatmap.shymike.dev?id=1&year=current](https://heatmap.shymike.dev?id=1&year=current)
+    ![Hackatime heatmap for current year](https://heatmap.shymike.dev?id=1&year=current)
+- [https://heatmap.shymike.dev?id=1&year=2025](https://heatmap.shymike.dev?id=1&year=2025)
+    ![Hackatime heatmap for 2025](https://heatmap.shymike.dev?id=1&year=2025)
+- [https://heatmap.shymike.dev?id=1&year=2026](https://heatmap.shymike.dev?id=1&year=2026)
+    ![Hackatime heatmap for 2026](https://heatmap.shymike.dev?id=1&year=2026)
 
 ### Show Labels
 
