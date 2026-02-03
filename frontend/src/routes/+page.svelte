@@ -214,18 +214,17 @@
 		if (mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')) {
 			const darkTheme = theme === 'catppuccin' ? 'catppuccin_dark' : 'dark';
 			const lightTheme = theme === 'catppuccin' ? 'catppuccin_light' : 'light';
+			const baseParams = getUrlParams();
 
-			const currentUrl = new URL(url, baseUrl);
-
-			const darkParams = new URLSearchParams(currentUrl.search);
+			const darkParams = new URLSearchParams(baseParams);
 			darkParams.set('theme', darkTheme);
 			const darkUrl = `${baseUrl}?${darkParams.toString()}`;
 
-			const lightParams = new URLSearchParams(currentUrl.search);
+			const lightParams = new URLSearchParams(baseParams);
 			lightParams.set('theme', lightTheme);
 			const lightUrl = `${baseUrl}?${lightParams.toString()}`;
 
-			const standaloneParams = new URLSearchParams(currentUrl.search);
+			const standaloneParams = new URLSearchParams(baseParams);
 			standaloneParams.set('standalone', 'true');
 			const standaloneUrl = `${baseUrl}?${standaloneParams.toString()}`;
 
