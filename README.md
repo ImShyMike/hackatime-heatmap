@@ -44,18 +44,19 @@ All the parameters that can be adjusted are:
 - [Id](#id)
 - [Timezone](#timezone)
 - [Theme](#theme)
+- [Cell Size](#cell-size)
 - [Padding](#padding)
 - [Rounding](#rounding)
-- [Cell Size](#cell-size)
 - [Ranges](#ranges)
+- [Show Labels](#show-labels)
 - [Standalone](#standalone)
 
-Some example are:
+Some examples:
 
-- [https://heatmap.shymike.dev?id=1&padding=2&theme=catppuccin_dark&timezone=EST&rounding=100](https://heatmap.shymike.dev?id=1&padding=2&theme=catppuccin_dark&timezone=EST&rounding=100)
-    ![Hackatime heatmap with Catppuccin dark theme, EST timezone, 100% rounding, and 2px padding](https://heatmap.shymike.dev?id=1&padding=2&theme=catppuccin_dark&timezone=EST&rounding=100)
-- [https://heatmap.shymike.dev?id=1&padding=0&theme=light&timezone=America/Los_Angeles&rounding=0](https://heatmap.shymike.dev?id=1&padding=0&theme=light&timezone=America/Los_Angeles&rounding=0)
-    ![Hackatime heatmap with light theme, America/Los_Angeles timezone, 0% rounding, and 0px padding](https://heatmap.shymike.dev?id=1&padding=0&theme=light&timezone=America/Los_Angeles&rounding=0)
+- [https://heatmap.shymike.dev?id=1&theme=catppuccin_dark&timezone=EST](https://heatmap.shymike.dev?id=1&theme=catppuccin_dark&timezone=EST)
+    ![Hackatime heatmap with Catppuccin dark theme, EST timezone](https://heatmap.shymike.dev?id=1&theme=catppuccin_dark&timezone=EST)
+- [https://heatmap.shymike.dev?id=1&theme=light&timezone=America/Los_Angeles](https://heatmap.shymike.dev?id=1&theme=light&timezone=America/Los_Angeles)
+    ![Hackatime heatmap with light theme, America/Los_Angeles timezone](https://heatmap.shymike.dev?id=1&theme=light&timezone=America/Los_Angeles)
 
 ### Id
 
@@ -92,32 +93,32 @@ The theme can be set to either `dark`, `light`, `catppuccin_dark` or `catppuccin
 - [https://heatmap.shymike.dev?id=1&theme=catppuccin_light](https://heatmap.shymike.dev?id=1&theme=catppuccin_light)
     ![Hackatime heatmap with Catppuccin light theme](https://heatmap.shymike.dev?id=1&theme=catppuccin_light)
 
+### Cell Size
+
+The size of each cell in pixels. Defaults to `10` px.
+
+- [https://heatmap.shymike.dev?id=1&cell_size=8](https://heatmap.shymike.dev?id=1&cell_size=8)
+    ![Hackatime heatmap with 8px cell size](https://heatmap.shymike.dev?id=1&cell_size=8)
+- [https://heatmap.shymike.dev?id=1&cell_size=15](https://heatmap.shymike.dev?id=1&cell_size=15)
+    ![Hackatime heatmap with 15px cell size](https://heatmap.shymike.dev?id=1&cell_size=15)
+
 ### Padding
 
-The padding around each cell in pixels. Defaults to `2`.
+The padding between each cell in pixels. Defaults to `3`.
 
+- [https://heatmap.shymike.dev?id=1&padding=1](https://heatmap.shymike.dev?id=1&padding=1)
+    ![Hackatime heatmap with 1px padding](https://heatmap.shymike.dev?id=1&padding=1)
 - [https://heatmap.shymike.dev?id=1&padding=5](https://heatmap.shymike.dev?id=1&padding=5)
     ![Hackatime heatmap with 5px padding](https://heatmap.shymike.dev?id=1&padding=5)
-- [https://heatmap.shymike.dev?id=1&padding=0](https://heatmap.shymike.dev?id=1&padding=0)
-    ![Hackatime heatmap with 0px padding](https://heatmap.shymike.dev?id=1&padding=0)
 
 ### Rounding
 
-The rounding percentage of each cell. Defaults to `50` %.
+The rounding percentage of each cell (0-100). Defaults to `20`.
 
 - [https://heatmap.shymike.dev?id=1&rounding=0](https://heatmap.shymike.dev?id=1&rounding=0)
     ![Hackatime heatmap with 0% rounding](https://heatmap.shymike.dev?id=1&rounding=0)
 - [https://heatmap.shymike.dev?id=1&rounding=100](https://heatmap.shymike.dev?id=1&rounding=100)
     ![Hackatime heatmap with 100% rounding](https://heatmap.shymike.dev?id=1&rounding=100)
-
-### Cell Size
-
-The size of each cell in pixels. Defaults to `15` px.
-
-- [https://heatmap.shymike.dev?id=1&cell_size=10](https://heatmap.shymike.dev?id=1&cell_size=10)
-    ![Hackatime heatmap with 5px cell size](https://heatmap.shymike.dev?id=1&cell_size=10)
-- [https://heatmap.shymike.dev?id=1&cell_size=25](https://heatmap.shymike.dev?id=1&cell_size=25)
-    ![Hackatime heatmap with 25px cell size](https://heatmap.shymike.dev?id=1&cell_size=25)
 
 ### Ranges
 
@@ -127,6 +128,15 @@ The percentage ranges for each color as a 3 item string list. Defaults to `70,30
     ![Hackatime heatmap with ranges 80,50,20](https://heatmap.shymike.dev?id=1&ranges=80,50,20)
 - [https://heatmap.shymike.dev?id=1&ranges=75,50,25](https://heatmap.shymike.dev?id=1&ranges=75,50,25)
     ![Hackatime heatmap with ranges 75,50,25](https://heatmap.shymike.dev?id=1&ranges=75,50,25)
+
+### Show Labels
+
+Whether to show month labels, weekday labels (Mon/Wed/Fri), and the "Less/More" legend. Defaults to `true`.
+
+- [https://heatmap.shymike.dev?id=1&show_labels=true](https://heatmap.shymike.dev?id=1&show_labels=true)
+    ![Hackatime heatmap with labels](https://heatmap.shymike.dev?id=1&show_labels=true)
+- [https://heatmap.shymike.dev?id=1&show_labels=false](https://heatmap.shymike.dev?id=1&show_labels=false)
+    ![Hackatime heatmap without labels](https://heatmap.shymike.dev?id=1&show_labels=false)
 
 ### Standalone
 

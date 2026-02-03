@@ -16,6 +16,7 @@
 		cellSize: 15,
 		padding: 2,
 		rounding: 50,
+		labels: false,
 		ranges: [70, 30, 10]
 	};
 
@@ -27,9 +28,10 @@
 	let id: string = $state('1');
 	let theme: Theme = $state('');
 	let timezone: string = $state('UTC');
-	let cellSize: number = $state(15);
-	let padding: number = $state(2);
-	let rounding: number = $state(50);
+	let cellSize: number = $state(10);
+	let padding: number = $state(3);
+	let rounding: number = $state(20);
+	let labels: boolean = $state(false);
 	let ranges: Array<number> = $state([70, 30, 10]);
 	let rangesString: string = $derived(ranges.join(','));
 	let useAutoTimezone: boolean = $state(false);
@@ -132,6 +134,10 @@
 			params.set('rounding', rounding.toString());
 		}
 
+		if (labels !== defaults.labels) {
+			params.set('labels', labels.toString());
+		}
+
 		if (rangesString !== defaults.ranges.join(',')) {
 			params.set('ranges', rangesString);
 		}
@@ -184,7 +190,7 @@
 		debounceTimer = setTimeout(() => {
 			debouncedUrl = currentUrl;
 		}, decounceMs);
-		
+
 		return () => {
 			if (debounceTimer) {
 				clearTimeout(debounceTimer);
@@ -381,6 +387,24 @@
 				</select>
 			</div>
 
+			<!-- Labels -->
+			<div class="space-y-2">
+				<label
+					for="show-labels"
+					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+				>
+					Show Labels:
+				</label>
+				<select
+					id="show-labels"
+					bind:value={labels}
+					class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+				>
+					<option value={false}>No</option>
+					<option value={true}>Yes</option>
+				</select>
+			</div>
+
 			<!-- Advanced Options -->
 			{#if configMode === 'advanced'}
 				<!-- Timezone -->
@@ -537,7 +561,7 @@
 				Preview:
 			</h2>
 			<div
-				class="relative rounded-lg p-1 transition-all duration-500 ease-in-out sm:p-2 md:p-4"
+				class="relative rounded-lg p-1 transition-all duration-500 ease-in-out sm:p-2 md:p-4 flex items-center justify-center"
 				style:background-color={darkBackground
 					? 'var(--color-github-dark)'
 					: 'var(--color-github-light)'}
@@ -564,7 +588,7 @@
 					alt="Error loading heatmap preview..."
 					onerror={imageError}
 					onload={imageLoad}
-					class="h-auto max-w-full rounded-md text-red transition-opacity duration-300 ease-in-out {imageLoaded
+					class="h-auto max-w-full text-red transition-opacity duration-300 ease-in-out {imageLoaded
 						? 'opacity-100'
 						: 'opacity-0'}"
 				/>

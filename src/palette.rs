@@ -3,6 +3,7 @@ pub type Color = (u8, u8, u8);
 pub struct Palette {
     name: &'static str,
     colors: [Color; 5],
+    text_color: Color,
 }
 
 impl Palette {
@@ -27,6 +28,14 @@ impl Palette {
         };
         self.get_color(level)
     }
+
+    pub fn text_color(&self) -> Color {
+        self.text_color
+    }
+
+    pub fn all_colors(&self) -> &[Color; 5] {
+        &self.colors
+    }
 }
 
 pub fn get_palette<'a>(palletes: &'a [Palette], name: &String) -> &'a Palette {
@@ -40,12 +49,13 @@ pub const PALETTES: &[Palette] = &[
     Palette {
         name: "dark", // Github Dark
         colors: [
-            (22, 27, 34),    // level 0 (no activity)
-            (0, 92, 46),     // level 1
-            (0, 130, 60),    // level 2
-            (57, 166, 84),   // level 3
-            (112, 201, 133), // level 4 (most activity)
+            (22, 27, 34),  // level 0 (no activity)
+            (0, 69, 41),   // level 1
+            (0, 109, 50),  // level 2
+            (38, 166, 65), // level 3
+            (57, 211, 83), // level 4 (most activity)
         ],
+        text_color: (139, 148, 158),
     },
     Palette {
         name: "light", // Github Light
@@ -56,6 +66,7 @@ pub const PALETTES: &[Palette] = &[
             (48, 161, 78),   // level 3
             (33, 110, 57),   // level 4 (most activity)
         ],
+        text_color: (87, 96, 106),
     },
     Palette {
         name: "catppuccin_light", // Catppuccin Latte
@@ -66,6 +77,7 @@ pub const PALETTES: &[Palette] = &[
             (254, 100, 11),  // level 3
             (210, 15, 57),   // level 4 (most activity)
         ],
+        text_color: (76, 79, 105),
     },
     Palette {
         name: "catppuccin_dark", // Catppuccin Mocha
@@ -76,5 +88,6 @@ pub const PALETTES: &[Palette] = &[
             (250, 179, 135), // level 3
             (243, 139, 168), // level 4 (most activity)
         ],
+        text_color: (205, 214, 244),
     },
 ];

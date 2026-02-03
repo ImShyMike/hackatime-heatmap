@@ -24,7 +24,7 @@ use tower_http::cors::CorsLayer;
 use serde::Deserialize;
 
 use svg::Document;
-use svg::node::element::{Rectangle, Title};
+use svg::node::element::{Group, Rectangle, Text, Title};
 
 use moka::sync::Cache;
 
@@ -34,6 +34,14 @@ use crate::utils::{build_headers, format_cell_label, validate_ranges};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
+const MONTH_LABEL_HEIGHT: usize = 15;
+const WEEKDAY_LABEL_WIDTH: usize = 28;
+const LEGEND_HEIGHT: usize = 20;
+
+const MONTH_LABELS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+const WEEKDAY_LABELS: [(usize, &str); 3] = [(1, "Mon"), (3, "Wed"), (5, "Fri")];
 const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const MAX_RESPONSE_CACHE_ENTRIES: u64 = 200;
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
@@ -60,6 +68,7 @@ struct SvgParams {
     theme: String,
     ranges: String,
     standalone: bool,
+    labels: bool,
 }
 
 impl Default for SvgParams {
@@ -67,12 +76,13 @@ impl Default for SvgParams {
         Self {
             id: None,
             timezone: "Europe/London".to_string(),
-            cell_size: 15,
-            padding: 2,
-            rounding: 50,
+            cell_size: 10,
+            padding: 3,
+            rounding: 20,
             theme: "dark".to_string(),
             ranges: "70,30,10".to_string(),
             standalone: false,
+            labels: false,
         }
     }
 }
@@ -129,14 +139,23 @@ fn create_svg_document(
     ranges: &[u32],
     params: &SvgParams,
 ) -> String {
-    let width = (DEFAULT_COLS * params.cell_size + params.padding * (DEFAULT_COLS + 1)) as u32;
-    let height = (DEFAULT_ROWS * params.cell_size + params.padding * (DEFAULT_ROWS + 1)) as u32;
-    let radius = (params.rounding.min(100) as f32 / 200.0) * params.cell_size as f32;
+    let cell_size = params.cell_size;
+    let padding = params.padding;
+    let show_labels = params.labels;
+
+    let weekday_width = if show_labels { WEEKDAY_LABEL_WIDTH } else { 0 };
+    let month_height = if show_labels { MONTH_LABEL_HEIGHT } else { 0 };
+    let legend_height = if show_labels { LEGEND_HEIGHT } else { 0 };
+
+    let grid_width = DEFAULT_COLS * (cell_size + padding);
+    let grid_height = DEFAULT_ROWS * (cell_size + padding);
+    let total_width = weekday_width + grid_width;
+    let total_height = month_height + grid_height + legend_height;
 
     let mut document = Document::new()
-        .set("width", width)
-        .set("height", height)
-        .set("viewBox", format!("0 0 {} {}", width, height));
+        .set("width", total_width)
+        .set("height", total_height)
+        .set("viewBox", format!("0 0 {} {}", total_width, total_height));
 
     let mut values: Vec<u32> = all_dates
         .iter()
@@ -146,6 +165,26 @@ fn create_svg_document(
     let max_duration = *values.last().unwrap_or(&0);
 
     let selected_palette = get_palette(PALETTES, &params.theme);
+    let text_color = selected_palette.text_color();
+    let text_color_str = format!(
+        "#{:02x}{:02x}{:02x}",
+        text_color.0, text_color.1, text_color.2
+    );
+
+    if show_labels {
+        let month_group = create_month_labels(
+            all_dates,
+            &text_color_str,
+            cell_size,
+            padding,
+            weekday_width,
+        );
+        document = document.add(month_group);
+
+        let weekday_group =
+            create_weekday_labels(&text_color_str, cell_size, padding, month_height);
+        document = document.add(weekday_group);
+    }
 
     for (i, date) in all_dates.iter().enumerate() {
         let rect = create_cell_rectangle(
@@ -156,12 +195,127 @@ fn create_svg_document(
             ranges,
             selected_palette,
             params,
-            radius,
+            weekday_width,
+            month_height,
         );
         document = document.add(rect);
     }
 
+    if show_labels {
+        let legend_group = create_legend(
+            selected_palette,
+            &text_color_str,
+            cell_size,
+            padding,
+            weekday_width,
+            month_height,
+        );
+        document = document.add(legend_group);
+    }
+
     document.to_string()
+}
+
+fn create_month_labels(
+    all_dates: &[chrono::NaiveDate],
+    text_color: &str,
+    cell_size: usize,
+    padding: usize,
+    weekday_width: usize,
+) -> Group {
+    use chrono::Datelike;
+
+    let mut group = Group::new();
+    let mut last_month: Option<u32> = None;
+
+    for (i, date) in all_dates.iter().enumerate() {
+        let col = i / DEFAULT_ROWS;
+        let row = i % DEFAULT_ROWS;
+
+        if row == 0 {
+            let month = date.month();
+            if last_month != Some(month) {
+                last_month = Some(month);
+                let x = weekday_width + col * (cell_size + padding);
+                let label = MONTH_LABELS[(month - 1) as usize];
+                let text = Text::new(label)
+                    .set("x", x)
+                    .set("y", 10)
+                    .set("fill", text_color)
+                    .set("font-size", "10px")
+                    .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+                group = group.add(text);
+            }
+        }
+    }
+    group
+}
+
+fn create_weekday_labels(
+    text_color: &str,
+    cell_size: usize,
+    padding: usize,
+    month_height: usize,
+) -> Group {
+    let mut group = Group::new();
+
+    for (row, label) in WEEKDAY_LABELS {
+        let y = month_height + row * (cell_size + padding) + cell_size;
+        let text = Text::new(label)
+            .set("x", 0)
+            .set("y", y)
+            .set("fill", text_color)
+            .set("font-size", "10px")
+            .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+        group = group.add(text);
+    }
+    group
+}
+
+fn create_legend(
+    palette: &palette::Palette,
+    text_color: &str,
+    cell_size: usize,
+    padding: usize,
+    weekday_width: usize,
+    month_height: usize,
+) -> Group {
+    let mut group = Group::new();
+    let legend_y = month_height + DEFAULT_ROWS * (cell_size + padding) + 8;
+    let legend_start_x = weekday_width + DEFAULT_COLS * (cell_size + padding) - 120;
+
+    let less_text = Text::new("Less")
+        .set("x", legend_start_x)
+        .set("y", legend_y + 9)
+        .set("fill", text_color)
+        .set("font-size", "10px")
+        .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+    group = group.add(less_text);
+
+    let colors = palette.all_colors();
+    let box_start_x = legend_start_x + 28;
+    for (i, color) in colors.iter().enumerate() {
+        let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
+        let rect = Rectangle::new()
+            .set("x", box_start_x + i * (cell_size + 2))
+            .set("y", legend_y)
+            .set("width", cell_size)
+            .set("height", cell_size)
+            .set("fill", color_str)
+            .set("rx", 2)
+            .set("ry", 2);
+        group = group.add(rect);
+    }
+
+    let more_text = Text::new("More")
+        .set("x", box_start_x + 5 * (cell_size + 2) + 2)
+        .set("y", legend_y + 9)
+        .set("fill", text_color)
+        .set("font-size", "10px")
+        .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+    group = group.add(more_text);
+
+    group
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -173,15 +327,18 @@ fn create_cell_rectangle(
     ranges: &[u32],
     palette: &palette::Palette,
     params: &SvgParams,
-    radius: f32,
+    weekday_width: usize,
+    month_height: usize,
 ) -> Rectangle {
+    let cell_size = params.cell_size;
+    let padding = params.padding;
+    let radius = (params.rounding.min(100) as f32 / 200.0) * cell_size as f32;
+
     let seconds = *day_buckets.get(date).unwrap_or(&0);
     let col = index / DEFAULT_ROWS;
     let row = index % DEFAULT_ROWS;
-    let x = (col * params.cell_size + params.padding * (col + 1)) as i32;
-    let y = (row * params.cell_size + params.padding * (row + 1)) as i32;
-    let w = params.cell_size as i32;
-    let h = params.cell_size as i32;
+    let x = weekday_width + col * (cell_size + padding);
+    let y = month_height + row * (cell_size + padding);
 
     let color = palette.calculate_color(seconds, max_duration, ranges);
     let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
@@ -189,11 +346,10 @@ fn create_cell_rectangle(
     let label = format_cell_label(date, seconds);
 
     let rect = Rectangle::new()
-        .set("title", label.clone())
         .set("x", x)
         .set("y", y)
-        .set("width", w)
-        .set("height", h)
+        .set("width", cell_size)
+        .set("height", cell_size)
         .set("fill", color_str)
         .set("rx", radius)
         .set("ry", radius);

@@ -90,7 +90,7 @@
 		{/if}
 	</button>
 	<pre
-		class="overflow-x-auto py-2 px-3 rounded-md border border-overlay0 !bg-surface0/60 transition-all duration-300 ease-in-out dark:border-overlay0"><code
+		class="overflow-x-auto rounded-md border border-overlay0 !bg-surface0/60 px-3 py-2 transition-all duration-300 ease-in-out dark:border-overlay0"><code
 			bind:this={codeElement}
 			class="language-{language} !bg-transparent text-sm text-text dark:text-text"
 			onclick={handleClick}
