@@ -12,7 +12,7 @@
 	}
 
 	let { code, language = 'html', readonly = true, class: className = '' }: Props = $props();
-	let codeElement: HTMLElement;
+	let codeElement: HTMLElement = $state()!;
 	let isCopied = $state(false);
 
 	let highlightedCode = $derived.by(() => {
@@ -90,14 +90,15 @@
 		{/if}
 	</button>
 	<pre
-		class="overflow-x-auto rounded-md border border-overlay0 !bg-surface0/60 px-3 py-2 transition-all duration-300 ease-in-out dark:border-overlay0"><code
-			bind:this={codeElement}
-			class="language-{language} !bg-transparent text-sm text-text dark:text-text"
-			onclick={handleClick}
-			aria-label="Code block"
-			role={readonly ? 'textbox' : undefined}
-			style="cursor: {readonly ? 'pointer' : 'default'}">{@html highlightedCode}</code
-		></pre>
+		class="overflow-x-auto rounded-md border border-overlay0 !bg-surface0/60 px-3 py-2 transition-all duration-300 ease-in-out dark:border-overlay0">{#key highlightedCode}<code
+				bind:this={codeElement}
+				class="language-{language} !bg-transparent text-sm text-text dark:text-text"
+				onclick={handleClick}
+				aria-label="Code block"
+				role={readonly ? 'textbox' : undefined}
+				style="cursor: {readonly ? 'pointer' : 'default'}"
+				>{@html highlightedCode}<!-- eslint-disable-line svelte/no-at-html-tags -- PrismJS output is trusted --></code
+			>{/key}</pre>
 </div>
 
 <style>

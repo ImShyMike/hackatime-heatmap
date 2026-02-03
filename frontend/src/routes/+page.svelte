@@ -117,7 +117,8 @@
 		return url;
 	});
 
-	function getUrlParams() {
+	function getUrlParams(): URLSearchParams {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Used in derived, not as reactive state
 		const params = new URLSearchParams();
 
 		params.set('id', id);
@@ -216,14 +217,17 @@
 			const lightTheme = theme === 'catppuccin' ? 'catppuccin_light' : 'light';
 			const baseParams = getUrlParams();
 
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Used in derived, not as reactive state
 			const darkParams = new URLSearchParams(baseParams);
 			darkParams.set('theme', darkTheme);
 			const darkUrl = `${baseUrl}?${darkParams.toString()}`;
 
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Used in derived, not as reactive state
 			const lightParams = new URLSearchParams(baseParams);
 			lightParams.set('theme', lightTheme);
 			const lightUrl = `${baseUrl}?${lightParams.toString()}`;
 
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Used in derived, not as reactive state
 			const standaloneParams = new URLSearchParams(baseParams);
 			standaloneParams.set('standalone', 'true');
 			const standaloneUrl = `${baseUrl}?${standaloneParams.toString()}`;
@@ -641,7 +645,7 @@
 					</div>
 				{/if}
 				<a
-					href="{previewUrl}&standalone=true"
+					href={`${previewUrl}&standalone=true`}
 					title="Click to view detailed data for each day!"
 					target="_blank"
 					rel="noopener noreferrer"
