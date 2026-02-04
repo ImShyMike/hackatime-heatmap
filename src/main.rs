@@ -46,9 +46,9 @@ const MONTH_LABELS: [&str; 12] = [
 ];
 const WEEKDAY_LABELS: [(usize, &str); 3] = [(1, "Mon"), (3, "Wed"), (5, "Fri")];
 const RESPONSE_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
-const MAX_RESPONSE_CACHE_ENTRIES: u64 = 200;
+const MAX_RESPONSE_CACHE_ENTRIES: u64 = 1000;
 const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
-const MAX_REQUEST_CACHE_ENTRIES: u64 = 25;
+const MAX_REQUEST_CACHE_ENTRIES: u64 = 200;
 const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
