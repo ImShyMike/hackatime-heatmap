@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{Datelike, Duration, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone};
 use chrono_tz::Tz;
 
 use crate::Span;
@@ -26,19 +26,20 @@ pub fn human_time(seconds: u32) -> String {
     }
 }
 
-pub fn create_timezone_timestamp(
+#[inline(always)]
+pub fn create_timezone_date(
     tz: &Tz,
     date: &chrono::NaiveDate,
     hour: u32,
     minute: u32,
     second: u32,
-) -> Result<f64, String> {
+) -> Result<DateTime<Tz>, String> {
     tz.with_ymd_and_hms(date.year(), date.month(), date.day(), hour, minute, second)
         .single()
-        .map(|dt| dt.timestamp() as f64)
         .ok_or_else(|| "Invalid date/time".to_string())
 }
 
+#[inline(always)]
 pub fn generate_date_range(start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
     let mut dates = Vec::new();
     let mut current = start;

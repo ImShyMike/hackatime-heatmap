@@ -8,7 +8,7 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{DateTime, Datelike, NaiveDate};
 use chrono_tz::Tz;
 
 use tower_http::compression::CompressionLayer;
@@ -32,7 +32,7 @@ use svg::node::element::{Group, Rectangle, Text, Title};
 use moka::sync::Cache;
 
 use crate::palette::{PALETTES, get_palette};
-use crate::time::{create_timezone_timestamp, generate_date_range, process_span_into_buckets};
+use crate::time::{create_timezone_date, generate_date_range, process_span_into_buckets};
 use crate::utils::{build_headers, format_cell_label, validate_ranges};
 
 const DEFAULT_ROWS: usize = 7;
@@ -57,14 +57,14 @@ const TEMPLATE: &str = include_str!("template.html");
 #[derive(Clone)]
 struct AppState {
     response_cache: Cache<SvgParams, String>,
-    request_cache: Cache<UserDateRange, RequestData>,
+    request_cache: Cache<UserDateRange, DayBuckets>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct UserDateRange {
     id: String,
-    start: NaiveDate,
-    end: NaiveDate,
+    start: DateTime<Tz>,
+    end: DateTime<Tz>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
@@ -111,6 +111,9 @@ struct Span {
     duration: f64,
 }
 
+type DayBuckets = HashMap<NaiveDate, u32>;
+
+#[inline(always)]
 fn embed_page(svg: &str, standalone: bool) -> String {
     if !standalone {
         return svg.to_string();
@@ -119,14 +122,7 @@ fn embed_page(svg: &str, standalone: bool) -> String {
     TEMPLATE.replace("{{SVG_CONTENT}}", svg)
 }
 
-async fn fetch_user_spans(
-    user_range: UserDateRange,
-    cache: &Cache<UserDateRange, RequestData>,
-) -> Result<Vec<Span>, String> {
-    if let Some(cached) = cache.get(&user_range) {
-        counter!("heatmap_cache_hits_total", "cache" => "request").increment(1);
-        return Ok(cached.spans.clone());
-    }
+async fn fetch_user_spans(user_range: &UserDateRange) -> Result<Vec<Span>, String> {
     counter!("heatmap_cache_misses_total", "cache" => "request").increment(1);
 
     let fetch_start = Instant::now();
@@ -148,13 +144,12 @@ async fn fetch_user_spans(
 
     histogram!("heatmap_upstream_request_duration_seconds")
         .record(fetch_start.elapsed().as_secs_f64());
-    cache.insert(user_range, json_resp.clone());
     Ok(json_resp.spans)
 }
 
 fn create_svg_document(
     all_dates: &[NaiveDate],
-    day_buckets: &HashMap<NaiveDate, u32>,
+    day_buckets: &DayBuckets,
     ranges: &[u32],
     params: &SvgParams,
 ) -> String {
@@ -339,7 +334,7 @@ fn create_legend(
 fn create_cell_rectangle(
     index: usize,
     date: &NaiveDate,
-    day_buckets: &HashMap<NaiveDate, u32>,
+    day_buckets: &DayBuckets,
     max_duration: u32,
     ranges: &[u32],
     palette: &palette::Palette,
@@ -443,12 +438,7 @@ async fn make_heatmap_svg(
     let now_utc = chrono::Utc::now();
     let now_local = now_utc.with_timezone(&tz);
     let today = now_local.date_naive();
-    let today_start = NaiveDate::from_ymd_opt(
-        today.year(),
-        today.month(),
-        today.day(),
-    ).unwrap_or(today);
-    let current_year = today_start.year();
+    let current_year = today.year();
 
     let (start_date, end_date) = match &params.year {
         Some(year_str) => {
@@ -472,27 +462,11 @@ async fn make_heatmap_svg(
         }
         None => {
             let one_year_ago = (now_local - chrono::Duration::days(365)).date_naive();
-            (one_year_ago, today_start)
+            (one_year_ago, today)
         }
     };
 
-    let user_range = UserDateRange {
-        id: id.clone(),
-        start: start_date,
-        end: end_date,
-    };
-    let spans = match fetch_user_spans(user_range, &state.request_cache).await {
-        Ok(s) => s,
-        Err(err) => {
-            counter!("heatmap_http_requests_errors_total", "error" => "upstream_failure")
-                .increment(1);
-            histogram!("heatmap_http_request_duration_seconds", "status" => "500")
-                .record(request_start.elapsed().as_secs_f64());
-            return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
-        }
-    };
-
-    let start_ts = match create_timezone_timestamp(&tz, &start_date, 0, 0, 0) {
+    let start_time = match create_timezone_date(&tz, &start_date, 0, 0, 0) {
         Ok(ts) => ts,
         Err(err) => {
             tracing::error!("Invalid start date: {}", err);
@@ -503,7 +477,7 @@ async fn make_heatmap_svg(
             return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
         }
     };
-    let end_ts = match create_timezone_timestamp(&tz, &end_date, 23, 59, 59) {
+    let end_time = match create_timezone_date(&tz, &end_date, 23, 59, 59) {
         Ok(ts) => ts,
         Err(err) => {
             tracing::error!("Invalid end date: {}", err);
@@ -515,13 +489,34 @@ async fn make_heatmap_svg(
         }
     };
 
-    let mut day_buckets: HashMap<NaiveDate, u32> = HashMap::new();
-    for span in spans
-        .iter()
-        .filter(|span| span.end_time >= start_ts && span.start_time <= end_ts)
-    {
-        process_span_into_buckets(span, &tz, &mut day_buckets);
-    }
+    let user_range = UserDateRange {
+        id: id.clone(),
+        start: start_time,
+        end: end_time,
+    };
+
+    let day_buckets = if let Some(cached) = state.request_cache.get(&user_range) {
+        counter!("heatmap_cache_hits_total", "cache" => "request").increment(1);
+        cached
+    } else {
+        let spans = match fetch_user_spans(&user_range).await {
+            Ok(s) => s,
+            Err(err) => {
+                counter!("heatmap_http_requests_errors_total", "error" => "upstream_failure")
+                    .increment(1);
+                histogram!("heatmap_http_request_duration_seconds", "status" => "500")
+                    .record(request_start.elapsed().as_secs_f64());
+                return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+            }
+        };
+
+        let mut day_buckets: DayBuckets = HashMap::new();
+        for span in &spans {
+            process_span_into_buckets(span, &tz, &mut day_buckets);
+        }
+        state.request_cache.insert(user_range, day_buckets.clone());
+        day_buckets
+    };
 
     let all_dates = generate_date_range(start_date, end_date);
     let svg_content = create_svg_document(&all_dates, &day_buckets, &ranges, &params);
