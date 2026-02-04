@@ -550,6 +550,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(make_heatmap_svg))
+        .route("/health", get(|| async { "OK" }))
         .layer(CompressionLayer::new().gzip(true))
         .layer(DecompressionLayer::new().gzip(true))
         .layer(TimeoutLayer::with_status_code(
