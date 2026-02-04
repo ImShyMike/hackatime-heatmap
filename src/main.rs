@@ -77,7 +77,6 @@ struct SvgParams {
     rounding: u8,
     theme: String,
     ranges: String,
-    standalone: bool,
     labels: bool,
     year: Option<String>,
 }
@@ -92,7 +91,6 @@ impl Default for SvgParams {
             rounding: 20,
             theme: "dark".to_string(),
             ranges: "70,30,10".to_string(),
-            standalone: false,
             labels: false,
             year: None,
         }
@@ -373,6 +371,7 @@ fn create_cell_rectangle(
 async fn make_heatmap_svg(
     State(state): State<AppState>,
     Query(params): Query<SvgParams>,
+    Query(standalone): Query<bool>,
     OriginalUri(uri): OriginalUri,
 ) -> Response {
     let request_start = Instant::now();
@@ -392,16 +391,18 @@ async fn make_heatmap_svg(
 
     counter!("heatmap_user_requests_total", "user_id" => id.clone()).increment(1);
 
-    if let Some(response) = state.response_cache.get(&params) {
+    let content_type = if standalone {
+        "text/html"
+    } else {
+        "image/svg+xml"
+    };
+
+    if let Some(svg_content) = state.response_cache.get(&params) {
         counter!("heatmap_cache_hits_total", "cache" => "response").increment(1);
-        let content_type = if params.standalone {
-            "text/html"
-        } else {
-            "image/svg+xml"
-        };
         histogram!("heatmap_http_request_duration_seconds", "status" => "200")
             .record(request_start.elapsed().as_secs_f64());
-        return (StatusCode::OK, build_headers(content_type), response).into_response();
+        let svg_buf = embed_page(&svg_content, standalone);
+        return (StatusCode::OK, build_headers(content_type), svg_buf).into_response();
     }
 
     counter!("heatmap_cache_misses_total", "cache" => "response").increment(1);
@@ -415,12 +416,6 @@ async fn make_heatmap_svg(
                 .record(request_start.elapsed().as_secs_f64());
             return (StatusCode::BAD_REQUEST, err).into_response();
         }
-    };
-
-    let content_type = if params.standalone {
-        "text/html"
-    } else {
-        "image/svg+xml"
     };
 
     let tz: Tz = match params.timezone.parse() {
@@ -520,9 +515,10 @@ async fn make_heatmap_svg(
 
     let all_dates = generate_date_range(start_date, end_date);
     let svg_content = create_svg_document(&all_dates, &day_buckets, &ranges, &params);
-    let svg_buf = embed_page(&svg_content, params.standalone);
 
-    state.response_cache.insert(params, svg_buf.clone());
+    state.response_cache.insert(params, svg_content.clone());
+
+    let svg_buf = embed_page(&svg_content, standalone);
 
     histogram!("heatmap_http_request_duration_seconds", "status" => "200")
         .record(request_start.elapsed().as_secs_f64());
