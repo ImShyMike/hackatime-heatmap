@@ -8,7 +8,7 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-use chrono::Datelike;
+use chrono::{Datelike, NaiveDate};
 use chrono_tz::Tz;
 
 use tower_http::compression::CompressionLayer;
@@ -57,7 +57,14 @@ const TEMPLATE: &str = include_str!("template.html");
 #[derive(Clone)]
 struct AppState {
     response_cache: Cache<SvgParams, String>,
-    request_cache: Cache<String, RequestData>,
+    request_cache: Cache<UserDateRange, RequestData>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct UserDateRange {
+    id: String,
+    start: NaiveDate,
+    end: NaiveDate,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
@@ -113,10 +120,10 @@ fn embed_page(svg: &str, standalone: bool) -> String {
 }
 
 async fn fetch_user_spans(
-    id: &str,
-    cache: &Cache<String, RequestData>,
+    user_range: UserDateRange,
+    cache: &Cache<UserDateRange, RequestData>,
 ) -> Result<Vec<Span>, String> {
-    if let Some(cached) = cache.get(id) {
+    if let Some(cached) = cache.get(&user_range) {
         counter!("heatmap_cache_hits_total", "cache" => "request").increment(1);
         return Ok(cached.spans.clone());
     }
@@ -124,8 +131,8 @@ async fn fetch_user_spans(
 
     let fetch_start = Instant::now();
     let url = format!(
-        "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans",
-        id
+        "https://hackatime.hackclub.com/api/v1/users/{}/heartbeats/spans?start_date={}&end_date={}",
+        user_range.id, user_range.start, user_range.end
     );
     let resp = reqwest::get(&url).await.map_err(|err| {
         tracing::error!("Error fetching data: {:?}", err);
@@ -141,13 +148,13 @@ async fn fetch_user_spans(
 
     histogram!("heatmap_upstream_request_duration_seconds")
         .record(fetch_start.elapsed().as_secs_f64());
-    cache.insert(id.to_string(), json_resp.clone());
+    cache.insert(user_range, json_resp.clone());
     Ok(json_resp.spans)
 }
 
 fn create_svg_document(
-    all_dates: &[chrono::NaiveDate],
-    day_buckets: &HashMap<chrono::NaiveDate, u32>,
+    all_dates: &[NaiveDate],
+    day_buckets: &HashMap<NaiveDate, u32>,
     ranges: &[u32],
     params: &SvgParams,
 ) -> String {
@@ -229,14 +236,12 @@ fn create_svg_document(
 }
 
 fn create_month_labels(
-    all_dates: &[chrono::NaiveDate],
+    all_dates: &[NaiveDate],
     text_color: &str,
     cell_size: usize,
     padding: usize,
     weekday_width: usize,
 ) -> Group {
-    use chrono::Datelike;
-
     let mut group = Group::new();
     let mut last_month: Option<u32> = None;
 
@@ -333,8 +338,8 @@ fn create_legend(
 #[allow(clippy::too_many_arguments)]
 fn create_cell_rectangle(
     index: usize,
-    date: &chrono::NaiveDate,
-    day_buckets: &HashMap<chrono::NaiveDate, u32>,
+    date: &NaiveDate,
+    day_buckets: &HashMap<NaiveDate, u32>,
     max_duration: u32,
     ranges: &[u32],
     palette: &palette::Palette,
@@ -438,7 +443,12 @@ async fn make_heatmap_svg(
     let now_utc = chrono::Utc::now();
     let now_local = now_utc.with_timezone(&tz);
     let today = now_local.date_naive();
-    let current_year = today.year();
+    let today_start = NaiveDate::from_ymd_opt(
+        today.year(),
+        today.month(),
+        today.day(),
+    ).unwrap_or(today);
+    let current_year = today_start.year();
 
     let (start_date, end_date) = match &params.year {
         Some(year_str) => {
@@ -456,17 +466,22 @@ async fn make_heatmap_svg(
                     }
                 }
             };
-            let jan_1 = chrono::NaiveDate::from_ymd_opt(year, 1, 1).unwrap();
-            let dec_31 = chrono::NaiveDate::from_ymd_opt(year, 12, 31).unwrap();
+            let jan_1 = NaiveDate::from_ymd_opt(year, 1, 1).unwrap();
+            let dec_31 = NaiveDate::from_ymd_opt(year, 12, 31).unwrap();
             (jan_1, dec_31)
         }
         None => {
             let one_year_ago = (now_local - chrono::Duration::days(365)).date_naive();
-            (one_year_ago, today)
+            (one_year_ago, today_start)
         }
     };
 
-    let spans = match fetch_user_spans(&id, &state.request_cache).await {
+    let user_range = UserDateRange {
+        id: id.clone(),
+        start: start_date,
+        end: end_date,
+    };
+    let spans = match fetch_user_spans(user_range, &state.request_cache).await {
         Ok(s) => s,
         Err(err) => {
             counter!("heatmap_http_requests_errors_total", "error" => "upstream_failure")
@@ -500,7 +515,7 @@ async fn make_heatmap_svg(
         }
     };
 
-    let mut day_buckets: HashMap<chrono::NaiveDate, u32> = HashMap::new();
+    let mut day_buckets: HashMap<NaiveDate, u32> = HashMap::new();
     for span in spans
         .iter()
         .filter(|span| span.end_time >= start_ts && span.start_time <= end_ts)
