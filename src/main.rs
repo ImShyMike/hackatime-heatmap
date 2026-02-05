@@ -33,7 +33,7 @@ use moka::sync::Cache;
 
 use crate::palette::{PALETTES, get_palette};
 use crate::time::{create_timezone_date, generate_date_range, process_span_into_buckets};
-use crate::utils::{build_headers, format_cell_label, validate_ranges};
+use crate::utils::{build_headers, format_cell_label, format_color, validate_ranges};
 
 const DEFAULT_ROWS: usize = 7;
 const DEFAULT_COLS: usize = 53;
@@ -184,10 +184,7 @@ fn create_svg_document(
 
     let selected_palette = get_palette(PALETTES, &params.theme);
     let text_color = selected_palette.text_color();
-    let text_color_str = format!(
-        "#{:02x}{:02x}{:02x}",
-        text_color.0, text_color.1, text_color.2
-    );
+    let text_color_str = format_color(text_color.0, text_color.1, text_color.2);
 
     if show_labels {
         let month_group = create_month_labels(
@@ -259,7 +256,7 @@ fn create_month_labels(
                     .set("y", 10)
                     .set("fill", text_color)
                     .set("font-size", "10px")
-                    .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+                    .set("font-family", "-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif");
                 group = group.add(text);
             }
         }
@@ -282,7 +279,7 @@ fn create_weekday_labels(
             .set("y", y)
             .set("fill", text_color)
             .set("font-size", "10px")
-            .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+            .set("font-family", "-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif");
         group = group.add(text);
     }
     group
@@ -305,13 +302,16 @@ fn create_legend(
         .set("y", legend_y + 9)
         .set("fill", text_color)
         .set("font-size", "10px")
-        .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+        .set(
+            "font-family",
+            "-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif",
+        );
     group = group.add(less_text);
 
     let colors = palette.all_colors();
     let box_start_x = legend_start_x + 28;
     for (i, color) in colors.iter().enumerate() {
-        let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
+        let color_str = format_color(color.0, color.1, color.2);
         let rect = Rectangle::new()
             .set("x", box_start_x + i * (cell_size + 2))
             .set("y", legend_y)
@@ -328,7 +328,10 @@ fn create_legend(
         .set("y", legend_y + 9)
         .set("fill", text_color)
         .set("font-size", "10px")
-        .set("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif");
+        .set(
+            "font-family",
+            "-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif",
+        );
     group = group.add(more_text);
 
     group
@@ -357,7 +360,7 @@ fn create_cell_rectangle(
     let y = month_height + row * (cell_size + padding);
 
     let color = palette.calculate_color(seconds, max_duration, ranges);
-    let color_str = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
+    let color_str = format_color(color.0, color.1, color.2);
 
     let label = format_cell_label(date, seconds);
 

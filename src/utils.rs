@@ -56,3 +56,14 @@ pub fn validate_ranges(ranges_str: &str) -> Result<Vec<u32>, String> {
 
     Ok(ranges)
 }
+
+#[inline(always)]
+pub fn format_color(r: u8, g: u8, b: u8) -> String {
+    if r == g && g == b && r.is_multiple_of(17) {
+        format!("#{:x}", r / 17)
+    } else if r.is_multiple_of(17) && g.is_multiple_of(17) && b.is_multiple_of(17) {
+        format!("#{:x}{:x}{:x}", r / 17, g / 17, b / 17)
+    } else {
+        format!("#{:02x}{:02x}{:02x}", r, g, b)
+    }
+}
