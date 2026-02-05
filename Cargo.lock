@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "hackatime-heatmap"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "axum",
  "chrono",
