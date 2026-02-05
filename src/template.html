@@ -8,11 +8,13 @@
         :root {
             --bg-color: #ffffff;
             --text-color: #24292f;
+            --subtitle-color: #57606a;
         }
         @media (prefers-color-scheme: dark) {
             :root {
                 --bg-color: #0d1117;
                 --text-color: #c9d1d9;
+                --subtitle-color: #8b949e;
             }
         }
         body {
@@ -24,27 +26,60 @@
             display: flex;
             align-items: flex-start;
             justify-content: center;
-            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+            line-height: 1.6;
         }
         .container {
             text-align: center;
-            padding: 20px;
+            padding: clamp(16px, 5vw, 40px);
+            width: 100%;
+            max-width: 100%;
         }
         .title {
-            font-size: 2rem;
+            font-size: clamp(1.5rem, 5vw, 2rem);
             font-weight: 600;
-            margin-bottom: 24px;
+            margin: 0 0 12px 0;
             color: var(--text-color);
+            line-height: 1.2;
+        }
+        .subtitle {
+            font-size: clamp(0.875rem, 3vw, 1rem);
+            color: var(--subtitle-color);
+            margin: 0 0 clamp(20px, 5vw, 32px) 0;
+            padding: 0 16px;
         }
         .heatmap-container {
             display: inline-block;
+            max-width: 100%;
+            padding: 8px 0;
+        }
+        .heatmap-container svg {
+            max-width: 100%;
+            height: auto;
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px 8px;
+            }
+            .title {
+                margin-bottom: 8px;
+                margin-top: 40px;
+            }
+            .subtitle {
+                padding: 0 8px;
+                margin-bottom: 20px;
+            }
+            .heatmap-container {
+                margin: 0 -8px;
+                padding: 4px 4px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="title">Hackatime Activity Heatmap</h1>
-        <p>Hover over each cell to see detailed data for that day!</p>
+        <p class="subtitle">Hover over each cell to see detailed data for that day!</p>
         <div class="heatmap-container">
             {{SVG_CONTENT}}
         </div>
@@ -53,7 +88,7 @@
         const params = new URLSearchParams(window.location.search);
         const currentTheme = params.get('theme') || 'auto';
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        
+
         let preferredTheme;
         if (currentTheme === 'auto') {
             preferredTheme = prefersDark ? 'dark' : 'light';
@@ -62,7 +97,7 @@
         } else {
             preferredTheme = currentTheme;
         }
-        
+
         if (currentTheme !== preferredTheme) {
             params.set('theme', preferredTheme);
             window.location.search = params.toString();
