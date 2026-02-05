@@ -68,6 +68,12 @@ struct UserDateRange {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
+struct StandaloneParam {
+    #[serde(default)]
+    standalone: bool,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
 #[serde(default)]
 struct SvgParams {
     id: Option<String>,
@@ -371,7 +377,7 @@ fn create_cell_rectangle(
 async fn make_heatmap_svg(
     State(state): State<AppState>,
     Query(params): Query<SvgParams>,
-    Query(standalone): Query<bool>,
+    Query(standalone): Query<StandaloneParam>,
     OriginalUri(uri): OriginalUri,
 ) -> Response {
     let request_start = Instant::now();
@@ -391,7 +397,7 @@ async fn make_heatmap_svg(
 
     counter!("heatmap_user_requests_total", "user_id" => id.clone()).increment(1);
 
-    let content_type = if standalone {
+    let content_type = if standalone.standalone {
         "text/html"
     } else {
         "image/svg+xml"
@@ -401,7 +407,7 @@ async fn make_heatmap_svg(
         counter!("heatmap_cache_hits_total", "cache" => "response").increment(1);
         histogram!("heatmap_http_request_duration_seconds", "status" => "200")
             .record(request_start.elapsed().as_secs_f64());
-        let svg_buf = embed_page(&svg_content, standalone);
+        let svg_buf = embed_page(&svg_content, standalone.standalone);
         return (StatusCode::OK, build_headers(content_type), svg_buf).into_response();
     }
 
@@ -518,7 +524,7 @@ async fn make_heatmap_svg(
 
     state.response_cache.insert(params, svg_content.clone());
 
-    let svg_buf = embed_page(&svg_content, standalone);
+    let svg_buf = embed_page(&svg_content, standalone.standalone);
 
     histogram!("heatmap_http_request_duration_seconds", "status" => "200")
         .record(request_start.elapsed().as_secs_f64());
