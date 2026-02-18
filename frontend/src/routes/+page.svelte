@@ -24,14 +24,18 @@
 		customYear: new Date().getFullYear()
 	};
 
+	const urlParams = new URLSearchParams(window.location.search);
+	const initialId = urlParams.get('id') || '1';
+	const initialTheme = urlParams.get('theme') as Theme || defaults.theme;
+	const initialTimezone = urlParams.get('timezone') || defaults.timezone;
 	const baseUrl = import.meta.env.PROD ? 'https://heatmap.shymike.dev' : 'http://localhost:8282';
-	const decounceMs = 100;
+	const debounceMs = 100;
 
 	let configMode: ConfigMode = $state('simple');
 	let mode: Mode = $state('theme-aware');
-	let id: string = $state('1');
-	let theme: Theme = $state('');
-	let timezone: string = $state('UTC');
+	let id: string = $state(initialId);
+	let theme: Theme = $state(initialTheme);
+	let timezone: string = $state(initialTimezone);
 	let cellSize: number = $state(10);
 	let padding: number = $state(3);
 	let rounding: number = $state(20);
@@ -202,7 +206,7 @@
 
 		debounceTimer = setTimeout(() => {
 			debouncedUrl = currentUrl;
-		}, decounceMs);
+		}, debounceMs);
 
 		return () => {
 			if (debounceTimer) {
