@@ -24,7 +24,7 @@
 		customYear: new Date().getFullYear()
 	};
 
-	const urlParams = new URLSearchParams(window.location.search);
+	const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const initialId = urlParams.get('id') || '1';
 	const initialTheme = urlParams.get('theme') as Theme || defaults.theme;
 	const initialTimezone = urlParams.get('timezone') || defaults.timezone;
