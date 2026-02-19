@@ -4,7 +4,7 @@ mod utils;
 
 use axum::Router;
 use axum::extract::{OriginalUri, Query, State};
-use axum::http::{HeaderValue, StatusCode};
+use axum::http::{HeaderMap as AxumHeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
@@ -54,6 +54,21 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 const TEMPLATE: &str = include_str!("template.html");
 
+fn svg_to_png(svg_str: &str) -> Result<Vec<u8>, String> {
+    let options = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(svg_str, &options)
+        .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+    let size = tree.size();
+    let width = size.width().ceil() as u32;
+    let height = size.height().ceil() as u32;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| "Failed to create pixmap".to_string())?;
+    resvg::render(&tree, resvg::usvg::Transform::default(), &mut pixmap.as_mut());
+    pixmap
+        .encode_png()
+        .map_err(|e| format!("Failed to encode PNG: {}", e))
+}
+
 #[derive(Clone)]
 struct AppState {
     response_cache: Cache<SvgParams, String>,
@@ -67,10 +82,25 @@ struct UserDateRange {
     end: DateTime<Tz>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
-struct StandaloneParam {
+#[derive(Debug, Deserialize, Clone)]
+struct ExtraParams {
     #[serde(default)]
     standalone: bool,
+    #[serde(default)]
+    format: OutputFormat,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum OutputFormat {
+    Svg,
+    Png,
+}
+
+impl Default for OutputFormat {
+    fn default() -> Self {
+        OutputFormat::Svg
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
@@ -377,10 +407,18 @@ fn create_cell_rectangle(
     rect.add(title)
 }
 
+fn is_slack_user_agent(headers: &AxumHeaderMap) -> bool {
+    headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ua| ua.contains("Slackbot") || ua.contains("Slack-ImgProxy"))
+}
+
 async fn make_heatmap_svg(
     State(state): State<AppState>,
+    headers: AxumHeaderMap,
     Query(params): Query<SvgParams>,
-    Query(standalone): Query<StandaloneParam>,
+    Query(extra): Query<ExtraParams>,
     OriginalUri(uri): OriginalUri,
 ) -> Response {
     let request_start = Instant::now();
@@ -400,8 +438,16 @@ async fn make_heatmap_svg(
 
     counter!("heatmap_user_requests_total", "user_id" => id.clone()).increment(1);
 
-    let content_type = if standalone.standalone {
+    let output_format = if is_slack_user_agent(&headers) {
+        OutputFormat::Png
+    } else {
+        extra.format
+    };
+
+    let content_type = if extra.standalone {
         "text/html"
+    } else if output_format == OutputFormat::Png {
+        "image/png"
     } else {
         "image/svg+xml"
     };
@@ -410,7 +456,13 @@ async fn make_heatmap_svg(
         counter!("heatmap_cache_hits_total", "cache" => "response").increment(1);
         histogram!("heatmap_http_request_duration_seconds", "status" => "200")
             .record(request_start.elapsed().as_secs_f64());
-        let svg_buf = embed_page(&svg_content, standalone.standalone);
+        if output_format == OutputFormat::Png && !extra.standalone {
+            return match svg_to_png(&svg_content) {
+                Ok(png) => (StatusCode::OK, build_headers(content_type), png).into_response(),
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            };
+        }
+        let svg_buf = embed_page(&svg_content, extra.standalone);
         return (StatusCode::OK, build_headers(content_type), svg_buf).into_response();
     }
 
@@ -527,10 +579,17 @@ async fn make_heatmap_svg(
 
     state.response_cache.insert(params, svg_content.clone());
 
-    let svg_buf = embed_page(&svg_content, standalone.standalone);
-
     histogram!("heatmap_http_request_duration_seconds", "status" => "200")
         .record(request_start.elapsed().as_secs_f64());
+
+    if output_format == OutputFormat::Png && !extra.standalone {
+        return match svg_to_png(&svg_content) {
+            Ok(png) => (StatusCode::OK, build_headers(content_type), png).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        };
+    }
+
+    let svg_buf = embed_page(&svg_content, extra.standalone);
     (StatusCode::OK, build_headers(content_type), svg_buf).into_response()
 }
 
