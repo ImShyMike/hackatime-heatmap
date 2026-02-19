@@ -17,6 +17,7 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use tower_http::catch_panic::CatchPanicLayer;
@@ -54,9 +55,14 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 const TEMPLATE: &str = include_str!("template.html");
 
+static SVG_OPTIONS: LazyLock<resvg::usvg::Options<'static>> = LazyLock::new(|| {
+    let mut options = resvg::usvg::Options::default();
+    options.fontdb_mut().load_system_fonts();
+    options
+});
+
 fn svg_to_png(svg_str: &str) -> Result<Vec<u8>, String> {
-    let options = resvg::usvg::Options::default();
-    let tree = resvg::usvg::Tree::from_str(svg_str, &options)
+    let tree = resvg::usvg::Tree::from_str(svg_str, &SVG_OPTIONS)
         .map_err(|e| format!("Failed to parse SVG: {}", e))?;
     let size = tree.size();
     let width = size.width().ceil() as u32;

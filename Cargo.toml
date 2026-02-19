@@ -1,7 +1,7 @@
 [package]
 name = "hackatime-heatmap"
 description = "Easy to set up Hackatime coding activity heatmap for your profile!"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2024"
 license = "AGPL-3.0-only"
 readme = "./README.md"
@@ -31,4 +31,4 @@ tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3.22", features = ["fmt"], default-features = false }
 metrics = { version = "0.24", default-features = false }
 metrics-exporter-prometheus = { version = "0.18.1", features = ["http-listener"], default-features = false }
-resvg = { version = "0.47.0", default-features = false }
+resvg = { version = "0.47.0", default-features = false, features = ["text", "system-fonts"] }
