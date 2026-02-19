@@ -63,7 +63,11 @@ fn svg_to_png(svg_str: &str) -> Result<Vec<u8>, String> {
     let height = size.height().ceil() as u32;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| "Failed to create pixmap".to_string())?;
-    resvg::render(&tree, resvg::usvg::Transform::default(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        resvg::usvg::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
     pixmap
         .encode_png()
         .map_err(|e| format!("Failed to encode PNG: {}", e))
@@ -90,17 +94,12 @@ struct ExtraParams {
     format: OutputFormat,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 enum OutputFormat {
+    #[default]
     Svg,
     Png,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        OutputFormat::Svg
-    }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone)]
