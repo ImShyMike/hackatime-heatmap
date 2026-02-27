@@ -1,0 +1,5 @@
+[build]
+onlyIncludeFiles = ["src/", "Cargo.toml", "Cargo.lock", "build.rs", "README.md"]
+
+[start]
+cmd = "hackatime-heatmap"
