@@ -3,3 +3,12 @@ onlyIncludeFiles = ["src/", "Cargo.toml", "Cargo.lock", "build.rs", "README.md"]
 
 [start]
 cmd = "hackatime-heatmap"
+
+[variables]
+PORT = "8282"
+
+[[ports]]
+port = "8282"
+
+[[ports]]
+port = "9292"
