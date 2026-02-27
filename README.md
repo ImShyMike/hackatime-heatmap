@@ -145,10 +145,10 @@ Display data for a specific calendar year (Jan 1 - Dec 31) instead of the last 3
 
 Whether to show month labels, weekday labels (Mon/Wed/Fri), and the "Less/More" legend. Defaults to `true`.
 
-- [https://heatmap.shymike.dev?id=1&show_labels=true](https://heatmap.shymike.dev?id=1&show_labels=true)
-    ![Hackatime heatmap with labels](https://heatmap.shymike.dev?id=1&show_labels=true)
-- [https://heatmap.shymike.dev?id=1&show_labels=false](https://heatmap.shymike.dev?id=1&show_labels=false)
-    ![Hackatime heatmap without labels](https://heatmap.shymike.dev?id=1&show_labels=false)
+- [https://heatmap.shymike.dev?id=1&labels=true](https://heatmap.shymike.dev?id=1&labels=true)
+    ![Hackatime heatmap with labels](https://heatmap.shymike.dev?id=1&labels=true)
+- [https://heatmap.shymike.dev?id=1&labels=false](https://heatmap.shymike.dev?id=1&labels=false)
+    ![Hackatime heatmap without labels](https://heatmap.shymike.dev?id=1&labels=false)
 
 ### Standalone
 
