@@ -140,7 +140,10 @@ impl Default for SvgParams {
 
 #[derive(Debug, Deserialize, Clone)]
 struct RequestData {
+    #[serde(default)]
     spans: Vec<Span>,
+    #[serde(default)]
+    error: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -148,6 +151,25 @@ struct Span {
     start_time: f64,
     end_time: f64,
     duration: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FetchUserSpansError {
+    DisabledPublicStats,
+    Fetch,
+    Parse,
+    Api,
+}
+
+impl FetchUserSpansError {
+    fn message(self) -> &'static str {
+        match self {
+            Self::DisabledPublicStats => "User has disabled public stats",
+            Self::Fetch => "Failed to fetch data",
+            Self::Parse => "Failed to parse response",
+            Self::Api => "Upstream API error",
+        }
+    }
 }
 
 type DayBuckets = HashMap<NaiveDate, u32>;
@@ -161,7 +183,7 @@ fn embed_page(svg: &str, standalone: bool) -> String {
     TEMPLATE.replace("{{SVG_CONTENT}}", svg)
 }
 
-async fn fetch_user_spans(user_range: &UserDateRange) -> Result<Vec<Span>, String> {
+async fn fetch_user_spans(user_range: &UserDateRange) -> Result<Vec<Span>, FetchUserSpansError> {
     counter!("heatmap_cache_misses_total", "cache" => "request").increment(1);
 
     let fetch_start = Instant::now();
@@ -172,14 +194,28 @@ async fn fetch_user_spans(user_range: &UserDateRange) -> Result<Vec<Span>, Strin
     let resp = reqwest::get(&url).await.map_err(|err| {
         tracing::error!("Error fetching data: {:?}", err);
         counter!("heatmap_upstream_errors_total", "type" => "fetch").increment(1);
-        "Failed to fetch data".to_string()
+        FetchUserSpansError::Fetch
     })?;
 
     let json_resp = resp.json::<RequestData>().await.map_err(|err| {
         tracing::error!("Error parsing JSON: {:?}", err);
         counter!("heatmap_upstream_errors_total", "type" => "parse").increment(1);
-        "Failed to parse response".to_string()
+        FetchUserSpansError::Parse
     })?;
+
+    match json_resp.error.as_str() {
+        "user has disabled public stats" => {
+            tracing::warn!("User {} has disabled public stats", user_range.id);
+            counter!("heatmap_upstream_errors_total", "type" => "privacy").increment(1);
+            return Err(FetchUserSpansError::DisabledPublicStats);
+        }
+        "" => {} // no error, continue
+        other => {
+            tracing::error!("Upstream API error: {}", other);
+            counter!("heatmap_upstream_errors_total", "type" => "api").increment(1);
+            return Err(FetchUserSpansError::Api);
+        }
+    }
 
     histogram!("heatmap_upstream_request_duration_seconds")
         .record(fetch_start.elapsed().as_secs_f64());
@@ -563,11 +599,20 @@ async fn make_heatmap_svg(
         let spans = match fetch_user_spans(&user_range).await {
             Ok(s) => s,
             Err(err) => {
-                counter!("heatmap_http_requests_errors_total", "error" => "upstream_failure")
-                    .increment(1);
-                histogram!("heatmap_http_request_duration_seconds", "status" => "500")
+                let (status, status_label, error_label) = match err {
+                    FetchUserSpansError::DisabledPublicStats => {
+                        (StatusCode::FORBIDDEN, "403", "disabled_public_stats")
+                    }
+                    FetchUserSpansError::Fetch
+                    | FetchUserSpansError::Parse
+                    | FetchUserSpansError::Api => {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "500", "upstream_failure")
+                    }
+                };
+                counter!("heatmap_http_requests_errors_total", "error" => error_label).increment(1);
+                histogram!("heatmap_http_request_duration_seconds", "status" => status_label)
                     .record(request_start.elapsed().as_secs_f64());
-                return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+                return (status, err.message()).into_response();
             }
         };
 
