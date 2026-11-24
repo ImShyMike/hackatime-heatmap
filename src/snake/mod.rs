@@ -116,7 +116,7 @@ pub fn generate_snake_animation_svg(
     let dot_size = params
         .dot_size
         .map_or(cell_size * 0.75, |d| (d as f32).clamp(0.5, cell_size * 2.0));
-    let step_duration_ms = params.speed.unwrap_or(120).clamp(10, 5000);
+    let step_duration_ms = params.speed.unwrap_or(120).clamp(20, 1000);
 
     let color_snake = params
         .snake_color

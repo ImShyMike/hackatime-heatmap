@@ -53,6 +53,8 @@ const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const MAX_REQUEST_CACHE_ENTRIES: u64 = 200;
 const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const MIN_SNAKE_SPEED_MS: u64 = 20;
+const MAX_SNAKE_SPEED_MS: u64 = 1000;
 
 const TEMPLATE: &str = include_str!("template.html");
 
@@ -663,6 +665,21 @@ async fn make_snake_svg(
     };
 
     counter!("heatmap_user_requests_total", "user_id" => id.clone()).increment(1);
+
+    if let Some(speed) = params.speed
+        && !(MIN_SNAKE_SPEED_MS..=MAX_SNAKE_SPEED_MS).contains(&speed)
+    {
+        counter!("heatmap_http_requests_errors_total", "error" => "invalid_speed").increment(1);
+        histogram!("heatmap_http_request_duration_seconds", "status" => "400")
+            .record(request_start.elapsed().as_secs_f64());
+        return (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid speed parameter, must be between {MIN_SNAKE_SPEED_MS} and {MAX_SNAKE_SPEED_MS}"
+            ),
+        )
+            .into_response();
+    }
 
     if let Some(svg_content) = state.snake_response_cache.get(&params) {
         counter!("heatmap_cache_hits_total", "cache" => "snake_response").increment(1);
