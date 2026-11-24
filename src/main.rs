@@ -1,4 +1,5 @@
 mod palette;
+mod snake;
 mod time;
 mod utils;
 
@@ -52,6 +53,8 @@ const REQUEST_CACHE_DURATION_SECONDS: u64 = 60 * 15; // (15 minutes)
 const MAX_REQUEST_CACHE_ENTRIES: u64 = 200;
 const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=900"); // 15 minutes
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const MIN_SNAKE_SPEED_MS: u64 = 20;
+const MAX_SNAKE_SPEED_MS: u64 = 1000;
 
 const TEMPLATE: &str = include_str!("template.html");
 
@@ -83,6 +86,7 @@ fn svg_to_png(svg_str: &str) -> Result<Vec<u8>, String> {
 struct AppState {
     response_cache: Cache<SvgParams, String>,
     request_cache: Cache<UserDateRange, DayBuckets>,
+    snake_response_cache: Cache<snake::SnakeParams, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -643,6 +647,172 @@ async fn make_heatmap_svg(
     (StatusCode::OK, build_headers(content_type), svg_buf).into_response()
 }
 
+async fn make_snake_svg(
+    State(state): State<AppState>,
+    Query(params): Query<snake::SnakeParams>,
+    OriginalUri(uri): OriginalUri,
+) -> Response {
+    let request_start = Instant::now();
+    counter!("heatmap_http_requests_total", "type" => "snake").increment(1);
+
+    tracing::info!("Snake request: {}", uri);
+
+    let Some(id) = params.id.clone() else {
+        counter!("heatmap_http_requests_errors_total", "error" => "missing_id").increment(1);
+        histogram!("heatmap_http_request_duration_seconds", "status" => "400")
+            .record(request_start.elapsed().as_secs_f64());
+        return (StatusCode::BAD_REQUEST, "Missing required parameter: id").into_response();
+    };
+
+    counter!("heatmap_user_requests_total", "user_id" => id.clone()).increment(1);
+
+    if let Some(speed) = params.speed
+        && !(MIN_SNAKE_SPEED_MS..=MAX_SNAKE_SPEED_MS).contains(&speed)
+    {
+        counter!("heatmap_http_requests_errors_total", "error" => "invalid_speed").increment(1);
+        histogram!("heatmap_http_request_duration_seconds", "status" => "400")
+            .record(request_start.elapsed().as_secs_f64());
+        return (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid speed parameter, must be between {MIN_SNAKE_SPEED_MS} and {MAX_SNAKE_SPEED_MS}"
+            ),
+        )
+            .into_response();
+    }
+
+    if let Some(svg_content) = state.snake_response_cache.get(&params) {
+        counter!("heatmap_cache_hits_total", "cache" => "snake_response").increment(1);
+        histogram!("heatmap_http_request_duration_seconds", "status" => "200")
+            .record(request_start.elapsed().as_secs_f64());
+        return (StatusCode::OK, build_headers("image/svg+xml"), svg_content).into_response();
+    }
+
+    counter!("heatmap_cache_misses_total", "cache" => "snake_response").increment(1);
+
+    let ranges = match validate_ranges(&params.ranges) {
+        Ok(r) => r,
+        Err(err) => {
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_ranges")
+                .increment(1);
+            histogram!("heatmap_http_request_duration_seconds", "status" => "400")
+                .record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::BAD_REQUEST, err).into_response();
+        }
+    };
+
+    let tz: Tz = match params.timezone.parse() {
+        Ok(tz) => tz,
+        Err(_) => {
+            tracing::warn!("Unsupported timezone: {}", params.timezone);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_timezone")
+                .increment(1);
+            histogram!("heatmap_http_request_duration_seconds", "status" => "400")
+                .record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::BAD_REQUEST, "Unsupported timezone".to_string()).into_response();
+        }
+    };
+
+    let now_utc = chrono::Utc::now();
+    let now_local = now_utc.with_timezone(&tz);
+    let today = now_local.date_naive();
+    let current_year = today.year();
+
+    let (start_date, end_date) = if let Some(year_str) = &params.year {
+        let year = if year_str.eq_ignore_ascii_case("current") {
+            current_year
+        } else if let Ok(y) = year_str.parse::<i32>() {
+            y
+        } else {
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_year")
+                .increment(1);
+            histogram!("heatmap_http_request_duration_seconds", "status" => "400")
+                .record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::BAD_REQUEST, "Invalid year parameter").into_response();
+        };
+        let jan_1 = NaiveDate::from_ymd_opt(year, 1, 1).unwrap();
+        let dec_31 = NaiveDate::from_ymd_opt(year, 12, 31).unwrap();
+        (jan_1, dec_31)
+    } else {
+        let one_year_ago = (now_local - chrono::Duration::days(365)).date_naive();
+        (one_year_ago, today)
+    };
+
+    let start_time = match create_timezone_date(&tz, &start_date, 0, 0, 0) {
+        Ok(ts) => ts,
+        Err(err) => {
+            tracing::error!("Invalid start date: {}", err);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_start_date")
+                .increment(1);
+            histogram!("heatmap_http_request_duration_seconds", "status" => "500")
+                .record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+        }
+    };
+    let end_time = match create_timezone_date(&tz, &end_date, 23, 59, 59) {
+        Ok(ts) => ts,
+        Err(err) => {
+            tracing::error!("Invalid end date: {}", err);
+            counter!("heatmap_http_requests_errors_total", "error" => "invalid_end_date")
+                .increment(1);
+            histogram!("heatmap_http_request_duration_seconds", "status" => "500")
+                .record(request_start.elapsed().as_secs_f64());
+            return (StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+        }
+    };
+
+    let user_range = UserDateRange {
+        id: id.clone(),
+        start: start_time,
+        end: end_time,
+    };
+
+    let day_buckets = if let Some(cached) = state.request_cache.get(&user_range) {
+        counter!("heatmap_cache_hits_total", "cache" => "request").increment(1);
+        cached
+    } else {
+        let spans = match fetch_user_spans(&user_range).await {
+            Ok(s) => s,
+            Err(err) => {
+                let (status, status_label, error_label) = match err {
+                    FetchUserSpansError::DisabledPublicStats => {
+                        (StatusCode::FORBIDDEN, "403", "disabled_public_stats")
+                    }
+                    FetchUserSpansError::Fetch
+                    | FetchUserSpansError::Parse
+                    | FetchUserSpansError::Api => {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "500", "upstream_failure")
+                    }
+                };
+                counter!("heatmap_http_requests_errors_total", "error" => error_label).increment(1);
+                histogram!("heatmap_http_request_duration_seconds", "status" => status_label)
+                    .record(request_start.elapsed().as_secs_f64());
+                return (status, err.message()).into_response();
+            }
+        };
+
+        let mut day_buckets: DayBuckets = HashMap::new();
+        for span in &spans {
+            process_span_into_buckets(span, &tz, &mut day_buckets);
+        }
+        state.request_cache.insert(user_range, day_buckets.clone());
+        day_buckets
+    };
+
+    let all_dates = generate_date_range(start_date, end_date);
+    let svg_content =
+        snake::generate_snake_animation_svg(&all_dates, &day_buckets, &ranges, &params);
+
+    state
+        .snake_response_cache
+        .insert(params, svg_content.clone());
+
+    histogram!("heatmap_http_request_duration_seconds", "status" => "200")
+        .record(request_start.elapsed().as_secs_f64());
+
+    (StatusCode::OK, build_headers("image/svg+xml"), svg_content).into_response()
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -670,10 +840,15 @@ async fn main() {
             .max_capacity(MAX_REQUEST_CACHE_ENTRIES)
             .time_to_live(Duration::from_secs(REQUEST_CACHE_DURATION_SECONDS))
             .build(),
+        snake_response_cache: Cache::builder()
+            .max_capacity(MAX_RESPONSE_CACHE_ENTRIES)
+            .time_to_live(Duration::from_secs(RESPONSE_CACHE_DURATION_SECONDS))
+            .build(),
     };
 
     let app = Router::new()
         .route("/", get(make_heatmap_svg))
+        .route("/snake", get(make_snake_svg))
         .route("/health", get(|| async { "OK" }))
         .layer(CompressionLayer::new().gzip(true))
         .layer(DecompressionLayer::new().gzip(true))

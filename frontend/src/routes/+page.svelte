@@ -8,14 +8,19 @@
 	type PageTheme = 'light' | 'dark';
 	type Mode = 'simple' | 'theme-aware';
 	type ConfigMode = 'simple' | 'advanced';
-
+	type GraphType = 'heatmap' | 'snake';
 	type YearMode = '' | 'current' | 'custom';
 
 	const defaults = {
+		graphType: 'heatmap' as GraphType,
 		mode: 'theme-aware' as Mode,
 		theme: '' as Theme,
 		timezone: 'UTC',
 		cellSize: 10,
+		snakeCellSize: 14,
+		dotSize: 10,
+		speed: 120,
+		snakeColor: '#7c3aed',
 		padding: 3,
 		rounding: 20,
 		labels: false,
@@ -26,17 +31,25 @@
 
 	const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const initialId = urlParams.get('id') || '1';
-	const initialTheme = urlParams.get('theme') as Theme || defaults.theme;
+	const initialTheme = (urlParams.get('theme') as Theme) || defaults.theme;
 	const initialTimezone = urlParams.get('timezone') || defaults.timezone;
+	const initialGraphType = urlParams.get('type') === 'snake' ? 'snake' : defaults.graphType;
+	const initialSnakeColor = urlParams.get('snake_color') || defaults.snakeColor;
+	const initialSpeed = Number(urlParams.get('speed')) || defaults.speed;
+	const initialDotSize = Number(urlParams.get('dot_size')) || defaults.dotSize;
 	const baseUrl = import.meta.env.PROD ? 'https://heatmap.shymike.dev' : 'http://localhost:8282';
 	const debounceMs = 100;
 
+	let graphType: GraphType = $state(initialGraphType);
 	let configMode: ConfigMode = $state('simple');
 	let mode: Mode = $state('theme-aware');
 	let id: string = $state(initialId);
 	let theme: Theme = $state(initialTheme);
 	let timezone: string = $state(initialTimezone);
-	let cellSize: number = $state(10);
+	let cellSize: number = $state(initialGraphType === 'snake' ? defaults.snakeCellSize : defaults.cellSize);
+	let dotSize: number = $state(initialDotSize);
+	let speed: number = $state(initialSpeed);
+	let snakeColor: string = $state(initialSnakeColor);
 	let padding: number = $state(3);
 	let rounding: number = $state(20);
 	let labels: boolean = $state(false);
@@ -99,6 +112,16 @@
 		return Intl.DateTimeFormat().resolvedOptions().timeZone;
 	}
 
+	function handleGraphTypeChange(newType: GraphType) {
+	if (newType === 'snake' && cellSize === defaults.cellSize) {
+		cellSize = defaults.snakeCellSize;
+	} else if (newType === 'heatmap' && cellSize === defaults.snakeCellSize) {
+		cellSize = defaults.cellSize;
+	}
+}
+
+	let endpoint = $derived(graphType === 'snake' ? `${baseUrl}/snake` : baseUrl);
+
 	let url = $derived.by(() => {
 		const params = getUrlParams();
 
@@ -106,7 +129,7 @@
 			params.set('theme', theme);
 		}
 
-		return `${baseUrl}?${params.toString()}`;
+		return `${endpoint}?${params.toString()}`;
 	});
 
 	let previewUrl = $derived.by(() => {
@@ -116,7 +139,7 @@
 			const dynamicTheme = theme === 'catppuccin' ? `catppuccin_${pageTheme}` : pageTheme;
 			params.set('theme', dynamicTheme);
 
-			return `${baseUrl}?${params.toString()}`;
+			return `${endpoint}?${params.toString()}`;
 		}
 		return url;
 	});
@@ -133,20 +156,32 @@
 			params.set('timezone', timezone);
 		}
 
-		if (cellSize !== defaults.cellSize) {
-			params.set('cell_size', cellSize.toString());
-		}
-
-		if (padding !== defaults.padding) {
-			params.set('padding', padding.toString());
-		}
-
-		if (rounding !== defaults.rounding) {
-			params.set('rounding', rounding.toString());
-		}
-
-		if (labels !== defaults.labels) {
-			params.set('labels', labels.toString());
+		if (graphType === 'snake') {
+			if (cellSize !== defaults.snakeCellSize) {
+				params.set('cell_size', cellSize.toString());
+			}
+			if (dotSize !== defaults.dotSize) {
+				params.set('dot_size', dotSize.toString());
+			}
+			if (speed !== defaults.speed) {
+				params.set('speed', speed.toString());
+			}
+			if (snakeColor !== defaults.snakeColor) {
+				params.set('snake_color', snakeColor);
+			}
+		} else {
+			if (cellSize !== defaults.cellSize) {
+				params.set('cell_size', cellSize.toString());
+			}
+			if (padding !== defaults.padding) {
+				params.set('padding', padding.toString());
+			}
+			if (rounding !== defaults.rounding) {
+				params.set('rounding', rounding.toString());
+			}
+			if (labels !== defaults.labels) {
+				params.set('labels', labels.toString());
+			}
 		}
 
 		if (rangesString !== defaults.ranges.join(',')) {
@@ -216,6 +251,31 @@
 	});
 
 	let generatedHtml = $derived.by(() => {
+		if (graphType === 'snake') {
+			if (mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')) {
+				const darkTheme = theme === 'catppuccin' ? 'catppuccin_dark' : 'dark';
+				const lightTheme = theme === 'catppuccin' ? 'catppuccin_light' : 'light';
+				const baseParams = getUrlParams();
+
+				// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Used in derived, not as reactive state
+				const darkParams = new URLSearchParams(baseParams);
+				darkParams.set('theme', darkTheme);
+				const darkUrl = `${endpoint}?${darkParams.toString()}`;
+
+				// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Used in derived, not as reactive state
+				const lightParams = new URLSearchParams(baseParams);
+				lightParams.set('theme', lightTheme);
+				const lightUrl = `${endpoint}?${lightParams.toString()}`;
+
+				return `<picture>
+    <source media="(prefers-color-scheme: dark)" srcset="${darkUrl}">
+    <img alt="Hackatime snake animation" src="${lightUrl}">
+</picture>`;
+			} else {
+				return `<img alt="Hackatime snake animation" src="${url}">`;
+			}
+		}
+
 		if (mode === 'theme-aware' && (theme === '' || theme === 'catppuccin')) {
 			const darkTheme = theme === 'catppuccin' ? 'catppuccin_dark' : 'dark';
 			const lightTheme = theme === 'catppuccin' ? 'catppuccin_light' : 'light';
@@ -285,7 +345,7 @@
 
 		<div class="">
 			<p class="inline text-subtext1 transition-colors duration-500 ease-in-out sm:block">
-				Generate a GitHub-style contribution heatmap for your Hackatime activity!
+				Generate a GitHub-style contribution heatmap or snake game animation for your Hackatime activity!
 			</p>
 			<p class="inline text-subtext1 transition-colors duration-500 ease-in-out sm:block">
 				Don't forget to also check out the <a
@@ -314,6 +374,57 @@
 		</div>
 
 		<div class="space-y-4">
+			<!-- Graph Type Toggle -->
+			<div class="space-y-2">
+				<label
+					for="graph-type"
+					class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+				>
+					Output Style:
+				</label>
+				<div
+					id="graph-type"
+					class="relative grid grid-cols-2 rounded-lg border border-overlay0 bg-surface0/40 p-1 transition-colors duration-500 ease-in-out dark:bg-surface0/60"
+				>
+					<div
+						class="absolute inset-1 h-[calc(100%-0.5rem)] w-[calc(50%-0.25rem)] rounded-md bg-surface1 shadow-sm transition-all duration-300 ease-in-out {graphType ===
+						'snake'
+							? 'translate-x-full'
+							: 'translate-x-0'}"
+					></div>
+
+					<input
+						type="radio"
+						id="heatmap"
+						bind:group={graphType}
+						value="heatmap"
+						onchange={() => handleGraphTypeChange('heatmap')}
+						class="peer/heatmap sr-only"
+					/>
+					<label
+						for="heatmap"
+						class="relative z-10 cursor-pointer px-4 py-2 text-center text-sm font-medium text-subtext0 transition-colors duration-300 ease-in-out peer-checked/heatmap:text-text"
+					>
+						Heatmap
+					</label>
+
+					<input
+						type="radio"
+						id="snake"
+						bind:group={graphType}
+						value="snake"
+						onchange={() => handleGraphTypeChange('snake')}
+						class="peer/snake sr-only"
+					/>
+					<label
+						for="snake"
+						class="relative z-10 cursor-pointer px-4 py-2 text-center text-sm font-medium text-subtext0 transition-colors duration-300 ease-in-out peer-checked/snake:text-text"
+					>
+						Snake Animation
+					</label>
+				</div>
+			</div>
+
 			<!-- Configuration Mode Toggle -->
 			<div class="space-y-2">
 				<label
@@ -424,26 +535,76 @@
 				</div>
 			</div>
 
-			<!-- Labels and Year -->
-			<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-				<div class="space-y-2">
-					<label
-						for="show-labels"
-						class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-					>
-						Show Labels:
-					</label>
-					<select
-						id="show-labels"
-						bind:value={labels}
-						class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-					>
-						<option value={false}>No</option>
-						<option value={true}>Yes</option>
-					</select>
-				</div>
+			<!-- Snake specific controls in simple mode -->
+			{#if graphType === 'snake'}
+				<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+					<div class="space-y-2">
+						<label
+							for="snake-color"
+							class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+						>
+							Snake Color:
+						</label>
+						<div class="flex items-center gap-2">
+							<input
+								id="snake-color-picker"
+								type="color"
+								bind:value={snakeColor}
+								class="h-9 w-12 cursor-pointer rounded border border-overlay0 bg-base p-1"
+							/>
+							<input
+								id="snake-color"
+								type="text"
+								bind:value={snakeColor}
+								placeholder="#7c3aed"
+								class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+							/>
+						</div>
+					</div>
 
-				<div class="space-y-2">
+					<div class="space-y-2">
+						<label
+							for="snake-speed"
+							class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+						>
+							Animation Speed:
+						</label>
+						<select
+							id="snake-speed"
+							bind:value={speed}
+							class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+						>
+							<option value={80}>Fast (80ms)</option>
+							<option value={120}>Normal (120ms)</option>
+							<option value={180}>Slow (180ms)</option>
+							<option value={250}>Very Slow (250ms)</option>
+						</select>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Labels / Date Range -->
+			<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+				{#if graphType === 'heatmap'}
+					<div class="space-y-2">
+						<label
+							for="show-labels"
+							class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+						>
+							Show Labels:
+						</label>
+						<select
+							id="show-labels"
+							bind:value={labels}
+							class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+						>
+							<option value={false}>No</option>
+							<option value={true}>Yes</option>
+						</select>
+					</div>
+				{/if}
+
+				<div class="space-y-2 {graphType === 'snake' ? 'md:col-span-2' : ''}">
 					<label
 						for="year-mode"
 						class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
@@ -527,42 +688,81 @@
 						/>
 					</div>
 
-					<!-- Padding -->
-					<div class="space-y-2">
-						<label
-							for="padding"
-							class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-						>
-							Padding:
-						</label>
-						<input
-							id="padding"
-							type="number"
-							bind:value={padding}
-							min="0"
-							max="10"
-							class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-						/>
-					</div>
+					{#if graphType === 'snake'}
+						<!-- Dot size for snake -->
+						<div class="space-y-2">
+							<label
+								for="dot-size"
+								class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+							>
+								Dot Size:
+							</label>
+							<input
+								id="dot-size"
+								type="number"
+								bind:value={dotSize}
+								min="4"
+								max="40"
+								class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+							/>
+						</div>
 
-					<!-- Rounding -->
-					<div class="space-y-2">
-						<label
-							for="rounding"
-							class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
-						>
-							Rounding:
-						</label>
-						<input
-							id="rounding"
-							type="number"
-							bind:value={rounding}
-							step="10"
-							min="0"
-							max="100"
-							class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
-						/>
-					</div>
+						<!-- Speed ms -->
+						<div class="space-y-2">
+							<label
+								for="step-speed"
+								class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+							>
+								Step Duration (ms):
+							</label>
+							<input
+								id="step-speed"
+								type="number"
+								bind:value={speed}
+								min="20"
+								max="1000"
+								step="10"
+								class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+							/>
+						</div>
+					{:else}
+						<!-- Padding for heatmap -->
+						<div class="space-y-2">
+							<label
+								for="padding"
+								class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+							>
+								Padding:
+							</label>
+							<input
+								id="padding"
+								type="number"
+								bind:value={padding}
+								min="0"
+								max="10"
+								class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+							/>
+						</div>
+
+						<!-- Rounding for heatmap -->
+						<div class="space-y-2">
+							<label
+								for="rounding"
+								class="block text-sm font-medium text-subtext1 transition-colors duration-500 ease-in-out"
+							>
+								Rounding:
+							</label>
+							<input
+								id="rounding"
+								type="number"
+								bind:value={rounding}
+								step="10"
+								min="0"
+								max="100"
+								class="w-full rounded-md border border-overlay0 bg-base px-3 py-2 text-text shadow-sm transition-all duration-300 ease-in-out focus:border-transparent focus:ring-2 focus:ring-blue focus:outline-none"
+							/>
+						</div>
+					{/if}
 				</div>
 
 				<!-- Ranges -->
@@ -622,7 +822,7 @@
 			<SyntaxHighlight code={generatedHtml} language="html" readonly={true} class="w-full" />
 		</div>
 
-		<!-- Heatmap Preview -->
+		<!-- Heatmap / Snake Preview -->
 		<div class="space-y-2">
 			<h2 class="text-lg font-semibold text-text transition-colors duration-500 ease-in-out">
 				Preview:
@@ -642,30 +842,42 @@
 							<div
 								class="h-6 w-6 animate-spin rounded-full border-2 border-text border-t-transparent"
 							></div>
-							<p class="text-text">Loading heatmap...</p>
+							<p class="text-text">Loading {graphType === 'snake' ? 'snake animation' : 'heatmap'}...</p>
 						</div>
 					</div>
 				{:else if loadFailed}
 					<div class="absolute inset-0 z-10 flex items-center justify-center">
-						<p class="text-red">Failed to load heatmap. Please check your configuration.</p>
+						<p class="text-red">Failed to load {graphType === 'snake' ? 'snake animation' : 'heatmap'}. Please check your configuration.</p>
 					</div>
 				{/if}
-				<a
-					href={`${previewUrl}&standalone=true`}
-					title="Click to view detailed data for each day!"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
+				{#if graphType === 'heatmap'}
+					<a
+						href={`${previewUrl}&standalone=true`}
+						title="Click to view detailed data for each day!"
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						<img
+							src={debouncedUrl}
+							alt="Error loading heatmap preview..."
+							onerror={imageError}
+							onload={imageLoad}
+							class="h-auto max-w-full text-red transition-opacity duration-300 ease-in-out {imageLoaded
+								? 'opacity-100'
+								: 'opacity-0'}"
+						/>
+					</a>
+				{:else}
 					<img
 						src={debouncedUrl}
-						alt="Error loading heatmap preview..."
+						alt="Error loading snake animation preview..."
 						onerror={imageError}
 						onload={imageLoad}
 						class="h-auto max-w-full text-red transition-opacity duration-300 ease-in-out {imageLoaded
 							? 'opacity-100'
 							: 'opacity-0'}"
 					/>
-				</a>
+				{/if}
 			</div>
 		</div>
 	</div>
