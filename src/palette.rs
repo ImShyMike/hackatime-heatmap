@@ -38,7 +38,7 @@ impl Palette {
     }
 }
 
-pub fn get_palette<'a>(palletes: &'a [Palette], name: &String) -> &'a Palette {
+pub fn get_palette<'a>(palletes: &'a [Palette], name: &str) -> &'a Palette {
     palletes
         .iter()
         .find(|p| p.name == name)
